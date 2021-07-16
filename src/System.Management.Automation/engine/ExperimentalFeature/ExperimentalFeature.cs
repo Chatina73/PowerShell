@@ -22,6 +22,7 @@ namespace System.Management.Automation
 
         internal const string EngineSource = "PSEngine";
         internal const string PSAnsiProgressFeatureName = "PSAnsiProgress";
+        internal const string PSNativeCommandArgumentPassingFeatureName = "PSNativeCommandArgumentPassing";
 
         #endregion
 
@@ -125,9 +126,6 @@ namespace System.Management.Automation
                     name: "PSNotApplyErrorActionToStderr",
                     description: "Don't have $ErrorActionPreference affect stderr output"),
                 new ExperimentalFeature(
-                    name: "PS7DscSupport",
-                    description: "Support the cross-platform class-based DSC"),
-                new ExperimentalFeature(
                     name: "PSSubsystemPluginModel",
                     description: "A plugin model for registering and un-registering PowerShell subsystems"),
                 new ExperimentalFeature(
@@ -136,11 +134,21 @@ namespace System.Management.Automation
                 new ExperimentalFeature(
                     name: PSAnsiProgressFeatureName,
                     description: "Enable lightweight progress bar that leverages ANSI codes for rendering"),
+                new ExperimentalFeature(
+                    name: PSNativeCommandArgumentPassingFeatureName,
+                    description: "Use ArgumentList when invoking a native command"),
+                new ExperimentalFeature(
+                    name: "PSLoadAssemblyFromNativeCode",
+                    description: "Expose an API to allow assembly loading from native code"),
+                new ExperimentalFeature(
+                    name: "PSAnsiRenderingFileInfo",
+                    description: "Enable coloring for FileInfo objects"),
             };
+
             EngineExperimentalFeatures = new ReadOnlyCollection<ExperimentalFeature>(engineFeatures);
 
             // Initialize the readonly dictionary 'EngineExperimentalFeatureMap'.
-            var engineExpFeatureMap = engineFeatures.ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
+            var engineExpFeatureMap = engineFeatures.ToDictionary(static f => f.Name, StringComparer.OrdinalIgnoreCase);
             EngineExperimentalFeatureMap = new ReadOnlyDictionary<string, ExperimentalFeature>(engineExpFeatureMap);
 
             // Initialize the readonly hashset 'EnabledExperimentalFeatureNames'.

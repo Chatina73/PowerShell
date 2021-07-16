@@ -16,8 +16,8 @@ if(Test-Path $dotNetPath)
 }
 
 # import build into the global scope so it can be used by packaging
-Import-Module (Join-Path $repoRoot 'build.psm1') -Scope Global
-Import-Module (Join-Path $repoRoot 'tools\packaging') -Scope Global
+Import-Module (Join-Path $repoRoot 'build.psm1') -Verbose -Scope Global
+Import-Module (Join-Path $repoRoot 'tools\packaging') -Verbose -Scope Global
 
 # import the windows specific functcion only in Windows PowerShell or on Windows
 if($PSVersionTable.PSEdition -eq 'Desktop' -or $IsWindows)
@@ -171,7 +171,7 @@ function Invoke-CIInstall
     }
 
     Set-BuildVariable -Name TestPassed -Value False
-    Start-PSBootstrap -Confirm:$false
+    Start-PSBootstrap
 }
 
 function Invoke-CIxUnit
@@ -502,7 +502,11 @@ function Invoke-CIFinish
 
         # the packaging tests find the MSI package using env:PSMsiX64Path
         $env:PSMsiX64Path = $artifacts | Where-Object { $_.EndsWith(".msi")}
-        $env:PSExePath = $artifacts | Where-Object { $_.EndsWith(".exe") }
+        $architechture = $Runtime.Split('-')[1]
+        $exePath = New-ExePackage -ProductVersion ($preReleaseVersion -replace '^v') -ProductTargetArchitecture $architechture -MsiLocationPath $env:PSMsiX64Path
+        Write-Verbose "exe Path: $exePath" -Verbose
+        $artifacts.Add($exePath)
+        $env:PSExePath = $exePath
         $env:PSMsiChannel = $Channel
         $env:PSMsiRuntime = $Runtime
 
@@ -542,23 +546,21 @@ function Invoke-CIFinish
         Start-PSBuild -Restore -Runtime win-arm64 -PSModuleRestore -Configuration 'Release' -ReleaseTag $releaseTag
         $arm64Package = Start-PSPackage -Type zip -WindowsRuntime win-arm64 -ReleaseTag $releaseTag -SkipReleaseChecks
         $artifacts.Add($arm64Package)
-
+    }
+    finally {
         $pushedAllArtifacts = $true
 
         $artifacts | ForEach-Object {
             Write-Log -Message "Pushing $_ as CI artifact"
-            if(Test-Path $_)
-            {
+            if (Test-Path $_) {
                 Push-Artifact -Path $_ -Name 'artifacts'
-            }
-            else
-            {
+            } else {
                 $pushedAllArtifacts = $false
                 Write-Warning "Artifact $_ does not exist."
             }
         }
-        if(!$pushedAllArtifacts)
-        {
+
+        if (!$pushedAllArtifacts) {
             throw "Some artifacts did not exist!"
         }
     }
@@ -713,7 +715,7 @@ function New-LinuxPackage
 
     # Only build packages for PowerShell/PowerShell repository
     # branches, not pull requests
-    $packages = @(Start-PSPackage @packageParams -SkipReleaseChecks)
+    $packages = @(Start-PSPackage @packageParams -SkipReleaseChecks -Type deb, rpm, tar)
     foreach($package in $packages)
     {
         if (Test-Path $package)
@@ -725,21 +727,18 @@ function New-LinuxPackage
             Write-Error -Message "Package NOT found: $package"
         }
 
-        if($isFullBuild)
+        if ($package -isnot [System.IO.FileInfo])
         {
-            if ($package -isnot [System.IO.FileInfo])
-            {
-                $packageObj = Get-Item $package
-                Write-Error -Message "The PACKAGE is not a FileInfo object"
-            }
-            else
-            {
-                $packageObj = $package
-            }
-
-            Write-Log -message "Artifacts directory: ${env:BUILD_ARTIFACTSTAGINGDIRECTORY}"
-            Copy-Item $packageObj.FullName -Destination "${env:BUILD_ARTIFACTSTAGINGDIRECTORY}" -Force
+            $packageObj = Get-Item $package
+            Write-Error -Message "The PACKAGE is not a FileInfo object"
         }
+        else
+        {
+            $packageObj = $package
+        }
+
+        Write-Log -message "Artifacts directory: ${env:BUILD_ARTIFACTSTAGINGDIRECTORY}"
+        Copy-Item $packageObj.FullName -Destination "${env:BUILD_ARTIFACTSTAGINGDIRECTORY}" -Force
     }
 
     if ($IsLinux)

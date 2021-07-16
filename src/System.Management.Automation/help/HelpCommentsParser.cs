@@ -20,7 +20,7 @@ namespace System.Management.Automation
     /// <summary>
     /// Parses help comments and turns them into HelpInfo objects.
     /// </summary>
-    internal class HelpCommentsParser
+    internal sealed class HelpCommentsParser
     {
         private HelpCommentsParser()
         {
@@ -482,7 +482,7 @@ namespace System.Management.Automation
                 CompiledCommandParameter parameter = mergedParameter.Parameter;
                 ParameterSetSpecificMetadata parameterSetData = parameter.GetParameterSetData(1u << i);
                 string description = GetParameterDescription(parameter.Name);
-                bool supportsWildcards = parameter.CompiledAttributes.Any(attribute => attribute is SupportsWildcardsAttribute);
+                bool supportsWildcards = parameter.CompiledAttributes.Any(static attribute => attribute is SupportsWildcardsAttribute);
                 XmlElement parameterElement = BuildXmlForParameter(parameter.Name,
                     parameterSetData.IsMandatory, parameterSetData.ValueFromPipeline,
                     parameterSetData.ValueFromPipelineByPropertyName,
@@ -628,7 +628,7 @@ namespace System.Management.Automation
                     start++;
                 }
 
-                sb.Append(line.Substring(start));
+                sb.Append(line.AsSpan(start));
                 sb.Append('\n');
             }
 

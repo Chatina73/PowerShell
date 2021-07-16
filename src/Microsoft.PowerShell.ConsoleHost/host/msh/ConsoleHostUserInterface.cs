@@ -60,8 +60,38 @@ namespace Microsoft.PowerShell
 
             _parent = parent;
             _rawui = new ConsoleHostRawUserInterface(this);
-            SupportsVirtualTerminal = TryTurnOnVtMode();
+            SupportsVirtualTerminal = true;
             _isInteractiveTestToolListening = false;
+
+            if (ExperimentalFeature.IsEnabled("PSAnsiRendering"))
+            {
+                // check if TERM env var is set
+                // `dumb` means explicitly don't use VT
+                // `xterm-mono` and `xtermm` means support VT, but emit plaintext
+                switch (Environment.GetEnvironmentVariable("TERM"))
+                {
+                    case "dumb":
+                        SupportsVirtualTerminal = false;
+                        break;
+                    case "xterm-mono":
+                    case "xtermm":
+                        PSStyle.Instance.OutputRendering = OutputRendering.PlainText;
+                        break;
+                    default:
+                        break;
+                }
+
+                // widely supported by CLI tools via https://no-color.org/
+                if (Environment.GetEnvironmentVariable("NO_COLOR") != null)
+                {
+                    PSStyle.Instance.OutputRendering = OutputRendering.PlainText;
+                }
+            }
+
+            if (SupportsVirtualTerminal)
+            {
+                SupportsVirtualTerminal = TryTurnOnVtMode();
+            }
         }
 
         internal bool TryTurnOnVtMode()
@@ -931,7 +961,7 @@ namespace Microsoft.PowerShell
                     int w = maxWidthInBufferCells - cellCounter;
                     Dbg.Assert(w < e.Current.CellCount, "width remaining should be less than size of word");
 
-                    line.Append(e.Current.Text.Substring(0, w));
+                    line.Append(e.Current.Text.AsSpan(0, w));
 
                     l = line.ToString();
                     Dbg.Assert(RawUI.LengthInBufferCells(l) == maxWidthInBufferCells, "line should exactly fit");
@@ -1989,8 +2019,7 @@ namespace Microsoft.PowerShell
                     var completionResult = commandCompletion.GetNextResult(rlResult == ReadLineResult.endedOnTab);
                     if (completionResult != null)
                     {
-                        completedInput = completionInput.Substring(0, commandCompletion.ReplacementIndex)
-                                         + completionResult.CompletionText;
+                        completedInput = string.Concat(completionInput.AsSpan(0, commandCompletion.ReplacementIndex), completionResult.CompletionText);
                     }
                     else
                     {

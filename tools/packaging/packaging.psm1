@@ -6,8 +6,8 @@ $RepoRoot = (Resolve-Path -Path "$PSScriptRoot/../..").Path
 
 $packagingStrings = Import-PowerShellDataFile "$PSScriptRoot\packaging.strings.psd1"
 Import-Module "$PSScriptRoot\..\Xml" -ErrorAction Stop -Force
-$DebianDistributions = @("ubuntu.16.04", "ubuntu.18.04", "ubuntu.20.04", "debian.9", "debian.10", "debian.11")
-$RedhatDistributions = @("rhel.7","centos.8")
+$DebianDistributions = @("deb")
+$RedhatDistributions = @("rh")
 $script:netCoreRuntime = 'net6.0'
 $script:iconFileName = "Powershell_black_64.png"
 $script:iconPath = Join-Path -path $PSScriptRoot -ChildPath "../../assets/$iconFileName" -Resolve
@@ -36,6 +36,10 @@ function Start-PSPackage {
         [ValidateSet("win7-x86", "win7-x64", "win-arm", "win-arm64")]
         [ValidateScript({$Environment.IsWindows})]
         [string] $WindowsRuntime,
+
+        [ValidateSet('osx-x64', 'osx-arm64')]
+        [ValidateScript({$Environment.IsMacOS})]
+        [string] $MacOSRuntime,
 
         [Switch] $Force,
 
@@ -71,12 +75,18 @@ function Start-PSPackage {
         # Runtime and Configuration settings required by the package
         ($Runtime, $Configuration) = if ($WindowsRuntime) {
             $WindowsRuntime, "Release"
+        } elseif ($MacOSRuntime) {
+           $MacOSRuntime, "Release"
         } elseif ($Type -eq "tar-alpine") {
             New-PSOptions -Configuration "Release" -Runtime "alpine-x64" -WarningAction SilentlyContinue | ForEach-Object { $_.Runtime, $_.Configuration }
         } elseif ($Type -eq "tar-arm") {
             New-PSOptions -Configuration "Release" -Runtime "Linux-ARM" -WarningAction SilentlyContinue | ForEach-Object { $_.Runtime, $_.Configuration }
         } elseif ($Type -eq "tar-arm64") {
-            New-PSOptions -Configuration "Release" -Runtime "Linux-ARM64" -WarningAction SilentlyContinue | ForEach-Object { $_.Runtime, $_.Configuration }
+            if ($IsMacOS) {
+                New-PSOptions -Configuration "Release" -Runtime "osx-arm64" -WarningAction SilentlyContinue | ForEach-Object { $_.Runtime, $_.Configuration }
+            } else {
+                New-PSOptions -Configuration "Release" -Runtime "Linux-ARM64" -WarningAction SilentlyContinue | ForEach-Object { $_.Runtime, $_.Configuration }
+            }
         } else {
             New-PSOptions -Configuration "Release" -WarningAction SilentlyContinue | ForEach-Object { $_.Runtime, $_.Configuration }
         }
@@ -97,6 +107,8 @@ function Start-PSPackage {
         } elseif ($Type -eq 'fxdependent-win-desktop') {
             $NameSuffix = "win-fxdependentWinDesktop"
             Write-Log "Packaging : '$Type'; Packaging Configuration: '$Configuration'"
+        } elseif ($MacOSRuntime) {
+            $NameSuffix = $MacOSRuntime
         } else {
             Write-Log "Packaging RID: '$Runtime'; Packaging Configuration: '$Configuration'"
         }
@@ -417,6 +429,10 @@ function Start-PSPackage {
                     Force = $Force
                 }
 
+                if ($MacOSRuntime) {
+                    $Arguments['Architecture'] = $MacOSRuntime.Split('-')[1]
+                }
+
                 if ($PSCmdlet.ShouldProcess("Create tar.gz Package")) {
                     New-TarballPackage @Arguments
                 }
@@ -576,10 +592,6 @@ function New-TarballPackage {
 
     $Staging = "$PSScriptRoot/staging"
     New-StagingFolder -StagingPath $Staging -PackageSourcePath $PackageSourcePath
-
-    if (-not $ExcludeSymbolicLinks.IsPresent) {
-        New-PSSymbolicLinks -Distribution 'ubuntu.16.04' -Staging $Staging
-    }
 
     if (Get-Command -Name tar -CommandType Application -ErrorAction Ignore) {
         if ($Force -or $PSCmdlet.ShouldProcess("Create tarball package")) {
@@ -840,9 +852,6 @@ function New-UnixPackage {
                 }
 
                 $packageVersion = Get-LinuxPackageSemanticVersion -Version $Version
-                if (!$Environment.IsRedHatFamily -and !$Environment.IsSUSEFamily) {
-                    throw ($ErrorMessage -f "Redhat or SUSE Family")
-                }
             }
             "osxpkg" {
                 $packageVersion = $Version
@@ -904,8 +913,7 @@ function New-UnixPackage {
         if ($PSCmdlet.ShouldProcess("Create package file system"))
         {
             # Generate After Install and After Remove scripts
-            $AfterScriptInfo = New-AfterScripts -Link $Link -Distribution $DebDistro
-            New-PSSymbolicLinks -Distribution $DebDistro -Staging $Staging
+            $AfterScriptInfo = New-AfterScripts -Link $Link -Distribution $DebDistro -Destination $Destination
 
             # there is a weird bug in fpm
             # if the target of the powershell symlink exists, `fpm` aborts
@@ -1265,42 +1273,18 @@ function Get-FpmArguments
     return $Arguments
 }
 
-function Test-Distribution
-{
-    param(
-        [String]
-        $Distribution
-    )
-
-    if ( $Environment.IsDebianFamily -and !$Distribution )
-    {
-        throw "$Distribution is required for a Debian based distribution."
-    }
-
-    if ( $Environment.IsDebianFamily -and $Script:DebianDistributions -notcontains $Distribution)
-    {
-        throw "$Distribution should be one of the following: $Script:DebianDistributions"
-    }
-
-    if ( $Environment.IsRedHatFamily -and $Script:RedHatDistributions -notcontains $Distribution)
-    {
-        throw "$Distribution should be one of the following: $Script:RedHatDistributions"
-    }
-
-    return $true
-}
 function Get-PackageDependencies
 {
     param(
         [String]
-        [ValidateScript({Test-Distribution -Distribution $_})]
+        [ValidateSet('rh','deb','macOS')]
         $Distribution
     )
 
     End {
         # These should match those in the Dockerfiles, but exclude tools like Git, which, and curl
         $Dependencies = @()
-        if ($Environment.IsDebianFamily) {
+        if ($Distribution -eq 'deb') {
             $Dependencies = @(
                 "libc6",
                 "libgcc1",
@@ -1311,14 +1295,9 @@ function Get-PackageDependencies
                 "libssl1.1|libssl1.0.2|libssl1.0.0"
             )
 
-        } elseif ($Environment.IsRedHatFamily) {
+        } elseif ($Distribution -eq 'rh') {
             $Dependencies = @(
                 "openssl-libs",
-                "libicu"
-            )
-        } elseif ($Environment.IsSUSEFamily) {
-            $Dependencies = @(
-                "libopenssl1_0_0",
                 "libicu"
             )
         }
@@ -1362,7 +1341,11 @@ function New-AfterScripts
 
         [Parameter(Mandatory)]
         [string]
-        $Distribution
+        $Distribution,
+
+        [Parameter(Mandatory)]
+        [string]
+        $Destination
     )
 
     Write-Verbose -Message "AfterScript Distribution: $Distribution" -Verbose
@@ -1370,14 +1353,14 @@ function New-AfterScripts
     if ($Environment.IsRedHatFamily) {
         $AfterInstallScript = [io.path]::GetTempFileName()
         $AfterRemoveScript = [io.path]::GetTempFileName()
-        $packagingStrings.RedHatAfterInstallScript -f "$Link" | Out-File -FilePath $AfterInstallScript -Encoding ascii
-        $packagingStrings.RedHatAfterRemoveScript -f "$Link" | Out-File -FilePath $AfterRemoveScript -Encoding ascii
+        $packagingStrings.RedHatAfterInstallScript -f "$Link", $Destination  | Out-File -FilePath $AfterInstallScript -Encoding ascii
+        $packagingStrings.RedHatAfterRemoveScript -f "$Link", $Destination | Out-File -FilePath $AfterRemoveScript -Encoding ascii
     }
     elseif ($Environment.IsDebianFamily -or $Environment.IsSUSEFamily) {
         $AfterInstallScript = [io.path]::GetTempFileName()
         $AfterRemoveScript = [io.path]::GetTempFileName()
-        $packagingStrings.UbuntuAfterInstallScript -f "$Link" | Out-File -FilePath $AfterInstallScript -Encoding ascii
-        $packagingStrings.UbuntuAfterRemoveScript -f "$Link" | Out-File -FilePath $AfterRemoveScript -Encoding ascii
+        $packagingStrings.UbuntuAfterInstallScript -f "$Link", $Destination | Out-File -FilePath $AfterInstallScript -Encoding ascii
+        $packagingStrings.UbuntuAfterRemoveScript -f "$Link", $Destination | Out-File -FilePath $AfterRemoveScript -Encoding ascii
     }
     elseif ($Environment.IsMacOS) {
         # NOTE: The macos pkgutil doesn't support uninstall actions so we did not implement it.
@@ -1389,60 +1372,6 @@ function New-AfterScripts
     return [PSCustomObject] @{
         AfterInstallScript = $AfterInstallScript
         AfterRemoveScript = $AfterRemoveScript
-    }
-}
-
-function New-PSSymbolicLinks
-{
-    param(
-        [Parameter(Mandatory)]
-        [string]
-        $Distribution,
-
-        [Parameter(Mandatory)]
-        [string]
-        $Staging
-    )
-
-    Write-Verbose -Message "PSSymLinks-Distribution: $Distribution" -Verbose
-
-    if ($Environment.IsRedHatFamily) {
-        switch -regex ($Distribution)
-        {
-            # add two symbolic links to system shared libraries that libmi.so is dependent on to handle
-            # platform specific changes. This is the only set of platforms needed for this currently
-            # as Ubuntu has these specific library files in the platform and macOS builds for itself
-            # against the correct versions.
-            'centos\.8' {
-                New-Item -Force -ItemType SymbolicLink -Target "/lib64/libssl.so.1.1" -Path "$Staging/libssl.so.1.0.0" > $null
-                New-Item -Force -ItemType SymbolicLink -Target "/lib64/libcrypto.so.1.1.1" -Path "$Staging/libcrypto.so.1.0.0" > $null
-            }
-            default {
-                New-Item -Force -ItemType SymbolicLink -Target "/lib64/libssl.so.10" -Path "$Staging/libssl.so.1.0.0" > $null
-                New-Item -Force -ItemType SymbolicLink -Target "/lib64/libcrypto.so.10" -Path "$Staging/libcrypto.so.1.0.0" > $null
-            }
-        }
-    }
-    elseif ($Environment.IsDebianFamily -or $Environment.IsSUSEFamily) {
-         switch -regex ($Distribution)
-        {
-            # add two symbolic links to system shared libraries that libmi.so is dependent on to handle
-            # platform specific changes. This appears to be a change in Debian 9; Debian 8 did not need these
-            # symlinks.
-            'debian\.9' {
-                New-Item -Force -ItemType SymbolicLink -Target "/usr/lib/x86_64-linux-gnu/libssl.so.1.0.2" -Path "$Staging/libssl.so.1.0.0" > $null
-                New-Item -Force -ItemType SymbolicLink -Target "/usr/lib/x86_64-linux-gnu/libcrypto.so.1.0.2" -Path "$Staging/libcrypto.so.1.0.0" > $null
-            }
-            'debian\.(10|11)' {
-                New-Item -Force -ItemType SymbolicLink -Target "/usr/lib/x86_64-linux-gnu/libssl.so.1.1" -Path "$Staging/libssl.so.1.0.0" > $null
-                New-Item -Force -ItemType SymbolicLink -Target "/usr/lib/x86_64-linux-gnu/libcrypto.so.1.1" -Path "$Staging/libcrypto.so.1.0.0" > $null
-            }
-            default {
-                # Default to old behavior before this change
-                New-Item -Force -ItemType SymbolicLink -Target "/lib64/libssl.so.10" -Path "$Staging/libssl.so.1.0.0" > $null
-                New-Item -Force -ItemType SymbolicLink -Target "/lib64/libcrypto.so.10" -Path "$Staging/libcrypto.so.1.0.0" > $null
-            }
-        }
     }
 }
 
@@ -2291,10 +2220,14 @@ function New-ReferenceAssembly
 
             $sourceProjectRoot = Join-Path $PSScriptRoot "projects/reference/$assemblyName"
             $sourceProjectFile = Join-Path $sourceProjectRoot "$assemblyName.csproj"
-            Copy-Item -Path $sourceProjectFile -Destination "$projectFolder/$assemblyName.csproj" -Force
-            Copy-Item -Path (Join-Path -Path $PSScriptRoot -ChildPath "../../nuget.config") -Destination $projectFolder
 
-            Write-Host "##vso[artifact.upload containerfolder=artifact;artifactname=artifact]$projectFolder/$assemblyName.csproj"
+            $destProjectFile = Join-Path $projectFolder "$assemblyName.csproj"
+            $nugetConfigFile = Join-Path $PSScriptRoot "../../nuget.config"
+
+            Copy-Item -Path $sourceProjectFile -Destination $destProjectFile -Force -Verbose
+            Copy-Item -Path $nugetConfigFile -Destination $projectFolder -Verbose
+
+            Write-Host "##vso[artifact.upload containerfolder=artifact;artifactname=artifact]$destProjectFile"
             Write-Host "##vso[artifact.upload containerfolder=artifact;artifactname=artifact]$generatedSource"
 
             $arguments = GenerateBuildArguments -AssemblyName $assemblyName -RefAssemblyVersion $RefAssemblyVersion -SnkFilePath $SnkFilePath -SMAReferencePath $SMAReferenceAssembly
@@ -2832,14 +2765,16 @@ function Get-WixPath
     $wixPyroExePath = Join-Path $wixToolsetBinPath "pyro.exe"
     $wixCandleExePath = Join-Path $wixToolsetBinPath "Candle.exe"
     $wixLightExePath = Join-Path $wixToolsetBinPath "Light.exe"
+    $wixInsigniaExePath = Join-Path $wixToolsetBinPath "Insignia.exe"
 
     return [PSCustomObject] @{
-        WixHeatExePath = $wixHeatExePath
-        WixMeltExePath = $wixMeltExePath
-        WixTorchExePath = $wixTorchExePath
-        WixPyroExePath = $wixPyroExePath
-        WixCandleExePath = $wixCandleExePath
-        WixLightExePath = $wixLightExePath
+        WixHeatExePath     = $wixHeatExePath
+        WixMeltExePath     = $wixMeltExePath
+        WixTorchExePath    = $wixTorchExePath
+        WixPyroExePath     = $wixPyroExePath
+        WixCandleExePath   = $wixCandleExePath
+        WixLightExePath    = $wixLightExePath
+        WixInsigniaExePath = $wixInsigniaExePath
     }
 
 }
@@ -3046,8 +2981,15 @@ function New-MSIPackage
 
     $wixPaths = Get-WixPath
 
-    $ProductSemanticVersion = Get-PackageSemanticVersion -Version $ProductVersion
-    $ProductVersion = Get-PackageVersionAsMajorMinorBuildRevision -Version $ProductVersion
+    $windowsNames = Get-WindowsNames -ProductName $ProductName -ProductNameSuffix $ProductNameSuffix -ProductVersion $ProductVersion
+    $productSemanticVersionWithName = $windowsNames.ProductSemanticVersionWithName
+    $ProductSemanticVersion = $windowsNames.ProductSemanticVersion
+    $packageName = $windowsNames.PackageName
+    $ProductVersion = $windowsNames.ProductVersion
+    Write-Verbose "Create MSI for Product $productSemanticVersionWithName" -Verbose
+    Write-Verbose "ProductSemanticVersion =  $productSemanticVersion" -Verbose
+    Write-Verbose "packageName =  $packageName" -Verbose
+    Write-Verbose "ProductVersion =  $ProductVersion" -Verbose
 
     $simpleProductVersion = [string]([Version]$ProductVersion).Major
     $isPreview = Test-IsPreview -Version $ProductSemanticVersion
@@ -3068,10 +3010,7 @@ function New-MSIPackage
     Write-Verbose "Place dependencies such as icons to $assetsInSourcePath"
     Copy-Item "$AssetsPath\*.ico" $assetsInSourcePath -Force
 
-    $productVersionWithName = $ProductName + '_' + $ProductVersion
-    $productSemanticVersionWithName = $ProductName + '-' + $ProductSemanticVersion
 
-    Write-Verbose "Create MSI for Product $productSemanticVersionWithName"
 
     $fileArchitecture = 'amd64'
     $ProductProgFilesDir = "ProgramFiles64Folder"
@@ -3085,11 +3024,6 @@ function New-MSIPackage
 
     # cleanup any garbage on the system
     Remove-Item -ErrorAction SilentlyContinue $wixFragmentPath -Force
-
-    $packageName = $productSemanticVersionWithName
-    if ($ProductNameSuffix) {
-        $packageName += "-$ProductNameSuffix"
-    }
 
     $msiLocationPath = Join-Path $CurrentLocation "$packageName.msi"
     $msiPdbLocationPath = Join-Path $CurrentLocation "$packageName.wixpdb"
@@ -3150,6 +3084,85 @@ function New-MSIPackage
         $errorMessage = "Failed to create $msiLocationPath"
         throw $errorMessage
     }
+}
+
+function Get-WindowsNames {
+    param(
+        # Name of the Product
+        [ValidateNotNullOrEmpty()]
+        [string] $ProductName = 'PowerShell',
+
+        # Suffix of the Name
+        [string] $ProductNameSuffix,
+
+        # Version of the Product
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string] $ProductVersion
+    )
+
+    Write-Verbose -Message "Getting Windows Names for ProductName: $ProductName; ProductNameSuffix: $ProductNameSuffix; ProductVersion: $ProductVersion" -Verbose
+
+    $ProductSemanticVersion = Get-PackageSemanticVersion -Version $ProductVersion
+    $ProductVersion = Get-PackageVersionAsMajorMinorBuildRevision -Version $ProductVersion
+
+    $productVersionWithName = $ProductName + '_' + $ProductVersion
+    $productSemanticVersionWithName = $ProductName + '-' + $ProductSemanticVersion
+
+    $packageName = $productSemanticVersionWithName
+    if ($ProductNameSuffix) {
+        $packageName += "-$ProductNameSuffix"
+    }
+
+    return [PSCustomObject]@{
+        PackageName                    = $packageName
+        ProductVersionWithName         = $productVersionWithName
+        ProductSemanticVersion         = $ProductSemanticVersion
+        ProductSemanticVersionWithName = $productSemanticVersionWithName
+        ProductVersion                 = $ProductVersion
+    }
+}
+
+function New-ExePackage {
+    param(
+        # Name of the Product
+        [ValidateNotNullOrEmpty()]
+        [string] $ProductName = 'PowerShell',
+
+        # Version of the Product
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+
+        [string] $ProductVersion,
+
+        # File describing the MSI Package creation semantics
+        [ValidateNotNullOrEmpty()]
+        [ValidateScript({Test-Path $_})]
+        [string] $BundleWxsPath = "$RepoRoot\assets\wix\bundle.wxs",
+
+        # Architecture to use when creating the MSI
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("x86", "x64")]
+        [ValidateNotNullOrEmpty()]
+        [string] $ProductTargetArchitecture,
+
+        # Location of the signed MSI
+        [Parameter(Mandatory = $true)]
+        [string]
+        $MsiLocationPath,
+
+        [string] $CurrentLocation = (Get-Location)
+    )
+
+    $productNameSuffix = "win-$ProductTargetArchitecture"
+
+    $windowsNames = Get-WindowsNames -ProductName $ProductName -ProductNameSuffix $productNameSuffix -ProductVersion $ProductVersion
+    $productSemanticVersionWithName = $windowsNames.ProductSemanticVersionWithName
+    $packageName = $windowsNames.PackageName
+    $isPreview = Test-IsPreview -Version $windowsNames.ProductSemanticVersion
+
+    Write-Verbose "Create EXE for Product $productSemanticVersionWithName" -verbose
+    Write-Verbose "packageName =  $packageName" -Verbose
 
     $exeLocationPath = Join-Path $CurrentLocation "$packageName.exe"
     $exePdbLocationPath = Join-Path $CurrentLocation "$packageName.exe.wixpdb"
@@ -3157,20 +3170,72 @@ function New-MSIPackage
 
     Start-MsiBuild -WxsFile $BundleWxsPath -ProductTargetArchitecture $ProductTargetArchitecture -Argument @{
         IsPreview      = $isPreview
-        TargetPath     = $msiLocationPath
+        TargetPath     = $MsiLocationPath
         WindowsVersion = $windowsVersion
     }  -MsiLocationPath $exeLocationPath -MsiPdbLocationPath $exePdbLocationPath
 
-    if (Test-Path $exeLocationPath)
-    {
-        Write-Verbose "You can find the MSI @ $exeLocationPath" -Verbose
-        $exeLocationPath
-    }
-    else
-    {
-        $errorMessage = "Failed to create $exeLocationPath"
-        throw $errorMessage
-    }
+    return $exeLocationPath
+}
+
+<#
+Allows you to extract the engine of exe package, mainly for signing
+Any existing signature will be removed.
+ #>
+function Expand-ExePackageEngine {
+    param(
+        # Location of the unsigned EXE
+        [Parameter(Mandatory = $true)]
+        [string]
+        $ExePath,
+
+        # Location to put the expanded engine.
+        [Parameter(Mandatory = $true)]
+        [string]
+        $EnginePath
+    )
+
+    <#
+    2. detach the engine from TestInstaller.exe:
+    insignia -ib TestInstaller.exe -o engine.exe
+    #>
+
+    $wixPaths = Get-WixPath
+
+    $resolvedExePath = (Resolve-Path -Path $ExePath).ProviderPath
+    $resolvedEnginePath = [System.IO.Path]::GetFullPath($EnginePath)
+
+    Start-NativeExecution -VerboseOutputOnError { & $wixPaths.wixInsigniaExePath -ib $resolvedExePath -o $resolvedEnginePath}
+}
+
+<#
+Allows you to replace the engine (installer) in the exe package.
+Used to replace the engine with a signed version
+#>
+function Compress-ExePackageEngine {
+    param(
+        # Location of the unsigned EXE
+        [Parameter(Mandatory = $true)]
+        [string]
+        $ExePath,
+
+        # Location of the signed engine
+        [Parameter(Mandatory = $true)]
+        [string]
+        $EnginePath
+    )
+
+
+    <#
+    4. re-attach the signed engine.exe to the bundle:
+    insignia -ab engine.exe TestInstaller.exe -o TestInstaller.exe
+    #>
+
+    $wixPaths = Get-WixPath
+
+    $resolvedEnginePath = (Resolve-Path -Path $EnginePath).ProviderPath
+    $resolvedExePath = (Resolve-Path -Path $ExePath).ProviderPath
+
+    Start-NativeExecution -VerboseOutputOnError { & $wixPaths.wixInsigniaExePath -ab $resolvedEnginePath $resolvedExePath -o $resolvedExePath}
 }
 
 function New-MsiArgsArray {
@@ -3233,7 +3298,8 @@ function Start-MsiBuild {
     Write-Log "running light..."
     # suppress ICE61, because we allow same version upgrades
     # suppress ICE57, this suppresses an error caused by our shortcut not being installed per user
-    Start-NativeExecution -VerboseOutputOnError {& $wixPaths.wixLightExePath -sice:ICE61 -sice:ICE57 -out $msiLocationPath -pdbout $msiPdbLocationPath $objectPaths $extensionArgs }
+    # suppress ICE40, REINSTALLMODE is defined in the Property table.
+    Start-NativeExecution -VerboseOutputOnError {& $wixPaths.wixLightExePath -sice:ICE61 -sice:ICE40 -sice:ICE57 -out $msiLocationPath -pdbout $msiPdbLocationPath $objectPaths $extensionArgs }
 
     foreach($file in $objectPaths)
     {

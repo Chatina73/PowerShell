@@ -12,6 +12,8 @@ using System.Management.Automation.Runspaces;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using System.Management.Automation.Subsystem;
+using System.Management.Automation.Subsystem.DSC;
 using Dsc = Microsoft.PowerShell.DesiredStateConfiguration.Internal;
 
 namespace System.Management.Automation.Language
@@ -140,6 +142,11 @@ namespace System.Management.Automation.Language
         /// <returns>The <see cref="ScriptBlockAst"/> that represents the input script file.</returns>
         public static ScriptBlockAst ParseInput(string input, string fileName, out Token[] tokens, out ParseError[] errors)
         {
+            if (input is null)
+            {
+                throw new ArgumentNullException(nameof(input));
+            }
+
             Parser parser = new Parser();
             List<Token> tokenList = new List<Token>();
             ScriptBlockAst result;
@@ -1972,7 +1979,7 @@ namespace System.Management.Automation.Language
                     }
                     else if ((token.TokenFlags & TokenFlags.Keyword) != 0)
                     {
-                        foreach (var attr in attributes.Where(attr => attr is not AttributeAst))
+                        foreach (var attr in attributes.Where(static attr => attr is not AttributeAst))
                         {
                             ReportError(attr.Extent,
                                 nameof(ParserStrings.TypeNotAllowedBeforeStatement),
@@ -2933,7 +2940,6 @@ namespace System.Management.Automation.Language
             //
             Runspaces.Runspace localRunspace = null;
             bool topLevel = false;
-            bool useCrossPlatformSchema = false;
             try
             {
                 // At this point, we'll need a runspace to use to hold the metadata for the parse. If there is no
@@ -2996,38 +3002,13 @@ namespace System.Management.Automation.Language
                         {
                             // Load the default CIM keywords
                             Collection<Exception> CIMKeywordErrors = new Collection<Exception>();
-                            if (ExperimentalFeature.IsEnabled(Dsc.CrossPlatform.DscClassCache.DscExperimentalFeatureName))
+
+                            // DscSubsystem is auto-registered when PSDesiredStateConfiguration v3 module is loaded
+                            // so if DscSubsystem is registered that means user intention to use v3 APIs.
+                            ICrossPlatformDsc dscSubsystem = SubsystemManager.GetSubsystem<ICrossPlatformDsc>();
+                            if (dscSubsystem != null)
                             {
-                                // In addition to checking if experimental feature is enabled
-                                // also check if PSDesiredStateConfiguration is already loaded
-                                // if pre-v3 is already loaded then use old mof-based APIs
-                                // otherwise use json-based APIs
-
-                                p.AddCommand(new CmdletInfo("Get-Module", typeof(Microsoft.PowerShell.Commands.GetModuleCommand)));
-                                p.AddParameter("Name", "PSDesiredStateConfiguration");
-                                
-                                bool prev3IsLoaded = false;
-                                foreach (PSModuleInfo moduleInfo in p.Invoke<PSModuleInfo>())
-                                {
-                                    if (moduleInfo.Version.Major < 3)
-                                    {
-                                        prev3IsLoaded = true;
-                                        break;
-                                    }
-                                }
-
-                                p.Commands.Clear();
-                                
-                                useCrossPlatformSchema = !prev3IsLoaded;
-
-                                if (useCrossPlatformSchema)
-                                {
-                                    Dsc.CrossPlatform.DscClassCache.LoadDefaultCimKeywords(CIMKeywordErrors);
-                                }
-                                else
-                                {
-                                    Dsc.DscClassCache.LoadDefaultCimKeywords(CIMKeywordErrors);
-                                }
+                                dscSubsystem.LoadDefaultKeywords(CIMKeywordErrors);
                             }
                             else
                             {
@@ -3274,9 +3255,10 @@ namespace System.Management.Automation.Language
                     // Clear out all of the cached classes and keywords.
                     // They will need to be reloaded when the generated function is actually run.
                     //
-                    if (useCrossPlatformSchema)
+                    ICrossPlatformDsc dscSubsystem = SubsystemManager.GetSubsystem<ICrossPlatformDsc>();
+                    if (dscSubsystem != null)
                     {
-                        Dsc.CrossPlatform.DscClassCache.ClearCache();
+                        dscSubsystem.ClearCache();
                     }
                     else
                     {
@@ -4687,19 +4669,19 @@ namespace System.Management.Automation.Language
 
         private StatementAst EnumDefinitionRule(List<AttributeBaseAst> customAttributes, Token enumToken)
         {
-            //G  enum-statement:
-            //G      'enum'   new-lines:opt   enum-name   '{'   enum-member-list   '}'
-            //G      'enum'   new-lines:opt   enum-name   ':'  enum-underlying-type  '{'   enum-member-list   '}'
-            //G
-            //G  enum-name:
-            //G      simple-name
-            //G
-            //G  enum-underlying-type:
-            //G      new-lines:opt   valid-type-name   new-lines:opt
-            //G
-            //G  enum-member-list:
-            //G      enum-member  new-lines:opt
-            //G      enum-member-list   enum-member
+            // G  enum-statement:
+            // G      'enum'   new-lines:opt   enum-name   '{'   enum-member-list   '}'
+            // G      'enum'   new-lines:opt   enum-name   ':'  enum-underlying-type  '{'   enum-member-list   '}'
+            // G
+            // G  enum-name:
+            // G      simple-name
+            // G
+            // G  enum-underlying-type:
+            // G      new-lines:opt   valid-type-name   new-lines:opt
+            // G
+            // G  enum-member-list:
+            // G      enum-member  new-lines:opt
+            // G      enum-member-list   enum-member
 
             const TypeCode ValidUnderlyingTypeCodes = TypeCode.Byte | TypeCode.Int16 | TypeCode.Int32 | TypeCode.Int64 | TypeCode.SByte | TypeCode.UInt16 | TypeCode.UInt32 | TypeCode.UInt64;
 
@@ -6043,7 +6025,7 @@ namespace System.Management.Automation.Language
                     commandAst = new CommandExpressionAst(
                         exprExtent,
                         expr,
-                        redirections?.Where(r => r != null));
+                        redirections?.Where(static r => r != null));
                 }
                 else
                 {
@@ -6674,7 +6656,7 @@ namespace System.Management.Automation.Language
 
             return new CommandAst(ExtentOf(firstToken, endExtent), elements,
                                   dotSource || ampersand ? firstToken.Kind : TokenKind.Unknown,
-                                  redirections?.Where(r => r != null));
+                                  redirections?.Where(static r => r != null));
         }
 
         #endregion Pipelines

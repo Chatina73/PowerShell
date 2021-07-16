@@ -51,19 +51,10 @@ namespace Microsoft.PowerShell.Commands
                                                      ISecurityDescriptorCmdletProvider,
                                                      ICmdletProviderSupportsHelp
     {
-#if UNIX
-        // This is the errno returned by the rename() syscall
-        // when an item is attempted to be renamed across filesystem mount boundaries.
-        private const int MOVE_FAILED_ERROR = 18;
-#else
-        // 0x80070005 ACCESS_DENIED is returned when trying to move files across volumes like DFS
-        private const int MOVE_FAILED_ERROR = -2147024891;
-#endif
-
         // 4MB gives the best results without spiking the resources on the remote connection for file transfers between pssessions.
         // NOTE: The script used to copy file data from session (PSCopyFromSessionHelper) has a
         // maximum fragment size value for security.  If FILETRANSFERSIZE changes make sure the
-        // copy script will accomodate the new value.
+        // copy script will accommodate the new value.
         private const int FILETRANSFERSIZE = 4 * 1024 * 1024;
 
         // The name of the key in an exception's Data dictionary when attempting
@@ -479,10 +470,11 @@ namespace Microsoft.PowerShell.Commands
             // The placeholder mode management APIs Rtl(Set|Query)(Process|Thread)PlaceholderCompatibilityMode
             // are only supported starting with Windows 10 version 1803 (build 17134)
             Version minBuildForPlaceHolderAPIs = new Version(10, 0, 17134, 0);
+
             if (Environment.OSVersion.Version >= minBuildForPlaceHolderAPIs)
             {
                 // let's be safe, don't change the PlaceHolderCompatibilityMode if the current one is not what we expect
-                if (NativeMethods.PHCM_DISGUISE_PLACEHOLDER == NativeMethods.RtlQueryProcessPlaceholderCompatibilityMode())
+                if (NativeMethods.RtlQueryProcessPlaceholderCompatibilityMode() == NativeMethods.PHCM_DISGUISE_PLACEHOLDER)
                 {
                     NativeMethods.RtlSetProcessPlaceholderCompatibilityMode(NativeMethods.PHCM_EXPOSE_PLACEHOLDERS);
                 }
@@ -1790,7 +1782,7 @@ namespace Microsoft.PowerShell.Commands
                 foreach (IEnumerable<FileSystemInfo> childList in target)
                 {
                     // On some systems, this is already sorted.  For consistency, always sort again.
-                    IEnumerable<FileSystemInfo> sortedChildList = childList.OrderBy(c => c.Name, StringComparer.CurrentCultureIgnoreCase);
+                    IEnumerable<FileSystemInfo> sortedChildList = childList.OrderBy(static c => c.Name, StringComparer.CurrentCultureIgnoreCase);
 
                     foreach (FileSystemInfo filesystemInfo in sortedChildList)
                     {
@@ -2066,11 +2058,43 @@ namespace Microsoft.PowerShell.Commands
         /// <returns>Name if a file or directory, Name -> Target if symlink.</returns>
         public static string NameString(PSObject instance)
         {
-            return instance?.BaseObject is FileSystemInfo fileInfo
-                ? InternalSymbolicLinkLinkCodeMethods.IsReparsePointWithTarget(fileInfo)
-                    ? $"{fileInfo.Name} -> {InternalSymbolicLinkLinkCodeMethods.GetTarget(instance)}"
-                    : fileInfo.Name
-                : string.Empty;
+            if (ExperimentalFeature.IsEnabled("PSAnsiRendering") && ExperimentalFeature.IsEnabled("PSAnsiRenderingFileInfo"))
+            {
+                if (instance?.BaseObject is FileSystemInfo fileInfo)
+                {
+                    if (InternalSymbolicLinkLinkCodeMethods.IsReparsePointWithTarget(fileInfo))
+                    {
+                        return $"{PSStyle.Instance.FileInfo.SymbolicLink}{fileInfo.Name}{PSStyle.Instance.Reset} -> {InternalSymbolicLinkLinkCodeMethods.GetTarget(instance)}";
+                    }
+                    else if (fileInfo.Attributes.HasFlag(FileAttributes.Directory))
+                    {
+                        return $"{PSStyle.Instance.FileInfo.Directory}{fileInfo.Name}{PSStyle.Instance.Reset}";
+                    }
+                    else if (PSStyle.Instance.FileInfo.Extension.ContainsKey(fileInfo.Extension))
+                    {
+                        return $"{PSStyle.Instance.FileInfo.Extension[fileInfo.Extension]}{fileInfo.Name}{PSStyle.Instance.Reset}";
+                    }
+                    else if ((Platform.IsWindows && CommandDiscovery.PathExtensions.Contains(fileInfo.Extension.ToLower())) ||
+                        (!Platform.IsWindows && Platform.NonWindowsIsExecutable(fileInfo.FullName)))
+                    {
+                        return $"{PSStyle.Instance.FileInfo.Executable}{fileInfo.Name}{PSStyle.Instance.Reset}";
+                    }
+                    else
+                    {
+                        return fileInfo.Name;
+                    }
+                }
+
+                return string.Empty;
+            }
+            else
+            {
+                return instance?.BaseObject is FileSystemInfo fileInfo
+                    ? InternalSymbolicLinkLinkCodeMethods.IsReparsePointWithTarget(fileInfo)
+                        ? $"{fileInfo.Name} -> {InternalSymbolicLinkLinkCodeMethods.GetTarget(instance)}"
+                        : fileInfo.Name
+                    : string.Empty;
+            }
         }
 
         /// <summary>
@@ -4424,7 +4448,7 @@ namespace Microsoft.PowerShell.Commands
                         }
                     }
 
-                    // To accomodate empty files
+                    // To accommodate empty files
                     string content = string.Empty;
                     if (op["b64Fragment"] != null)
                     {
@@ -6078,12 +6102,12 @@ namespace Microsoft.PowerShell.Commands
             {
                 if (InternalTestHooks.ThrowExdevErrorOnMoveDirectory)
                 {
-                    throw new IOException("Invalid cross-device link", hresult: MOVE_FAILED_ERROR);
+                    throw new IOException("Invalid cross-device link");
                 }
 
                 directory.MoveTo(destinationPath);
             }
-            catch (IOException e) when (e.HResult == MOVE_FAILED_ERROR)
+            catch (IOException)
             {
                 // Rather than try to ascertain whether we can rename a directory ahead of time,
                 // it's both faster and more correct to try to rename it and fall back to copy/deleting it
@@ -7526,7 +7550,7 @@ namespace Microsoft.PowerShell.Commands
         /// Gets or sets the filter directory flag.
         /// </summary>
         [Parameter]
-        [Alias("ad", "d")]
+        [Alias("ad")]
         public SwitchParameter Directory
         {
             get { return _attributeDirectory; }
@@ -8360,9 +8384,11 @@ namespace Microsoft.PowerShell.Commands
             }
 
             inodeData = (0, 0);
+
             return false;
         }
 #endif
+
         internal static bool IsHardLink(ref IntPtr handle)
         {
 #if UNIX
