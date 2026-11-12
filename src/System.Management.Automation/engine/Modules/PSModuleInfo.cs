@@ -453,7 +453,7 @@ namespace System.Management.Automation
         public ModuleType ModuleType { get; private set; } = ModuleType.Script;
 
         /// <summary>
-        /// This this module as being a compiled module...
+        /// This module as being a compiled module...
         /// </summary>
         internal void SetModuleType(ModuleType moduleType) { ModuleType = moduleType; }
 
@@ -545,7 +545,10 @@ namespace System.Management.Automation
                 // If the module is not binary, it may also have functions...
                 if (DeclaredFunctionExports != null)
                 {
-                    if (DeclaredFunctionExports.Count == 0) { return exports; }
+                    if (DeclaredFunctionExports.Count == 0)
+                    {
+                        return exports;
+                    }
 
                     foreach (string fn in DeclaredFunctionExports)
                     {
@@ -661,16 +664,16 @@ namespace System.Management.Automation
             else
             {
                 this._exportedTypeDefinitionsNoNested = new ReadOnlyDictionary<string, TypeDefinitionAst>(
-                    moduleContentScriptBlockAsts.FindAll(a => (a is TypeDefinitionAst), false)
+                    moduleContentScriptBlockAsts.FindAll(static a => (a is TypeDefinitionAst), false)
                         .OfType<TypeDefinitionAst>()
-                        .ToDictionary(a => a.Name, StringComparer.OrdinalIgnoreCase));
+                        .ToDictionary(static a => a.Name, StringComparer.OrdinalIgnoreCase));
             }
         }
 
         internal void AddDetectedTypeExports(List<TypeDefinitionAst> typeDefinitions)
         {
             this._exportedTypeDefinitionsNoNested = new ReadOnlyDictionary<string, TypeDefinitionAst>(
-                typeDefinitions.ToDictionary(a => a.Name, StringComparer.OrdinalIgnoreCase));
+                typeDefinitions.ToDictionary(static a => a.Name, StringComparer.OrdinalIgnoreCase));
         }
 
         /// <summary>
@@ -707,7 +710,10 @@ namespace System.Management.Automation
 
                 if (DeclaredCmdletExports != null)
                 {
-                    if (DeclaredCmdletExports.Count == 0) { return exports; }
+                    if (DeclaredCmdletExports.Count == 0)
+                    {
+                        return exports;
+                    }
 
                     foreach (string fn in DeclaredCmdletExports)
                     {
@@ -1302,10 +1308,7 @@ namespace System.Management.Automation
         /// <returns></returns>
         public PSVariable GetVariableFromCallersModule(string variableName)
         {
-            if (string.IsNullOrEmpty(variableName))
-            {
-                throw new ArgumentNullException(nameof(variableName));
-            }
+            ArgumentException.ThrowIfNullOrEmpty(variableName);
 
             var context = LocalPipeline.GetExecutionContextFromTLS();
             SessionState callersSessionState = null;
@@ -1437,8 +1440,8 @@ namespace System.Management.Automation
 
         /// <summary>
         /// Implements deep copy of a PSModuleInfo instance.
-        /// <returns>A new PSModuleInfo instance.</returns>
         /// </summary>
+        /// <returns>A new PSModuleInfo instance.</returns>
         public PSModuleInfo Clone()
         {
             PSModuleInfo clone = (PSModuleInfo)this.MemberwiseClone();

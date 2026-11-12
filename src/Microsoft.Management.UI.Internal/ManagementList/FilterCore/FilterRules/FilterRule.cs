@@ -8,9 +8,8 @@ namespace Microsoft.Management.UI.Internal
     /// <summary>
     /// The base class for all filtering rules.
     /// </summary>
-    [Serializable]
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.MSInternal", "CA903:InternalNamespaceShouldNotContainPublicTypes")]
-    public abstract class FilterRule : IEvaluate
+    public abstract class FilterRule : IEvaluate, IDeepCloneable
     {
         /// <summary>
         /// Gets a value indicating whether the FilterRule can be
@@ -34,15 +33,26 @@ namespace Microsoft.Management.UI.Internal
         }
 
         /// <summary>
-        /// Initializes a new instance of the FilterRule class.
+        /// Initializes a new instance of the <see cref="FilterRule"/> class.
         /// </summary>
         protected FilterRule()
         {
-            // HACK : Is there a way to statically enforce this? No... not ISerializable...
-            if (!this.GetType().IsSerializable)
-            {
-                throw new InvalidOperationException("FilterRules must be serializable.");
-            }
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="FilterRule"/> class.
+        /// </summary>
+        /// <param name="source">The source to initialize from.</param>
+        protected FilterRule(FilterRule source)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            this.DisplayName = source.DisplayName;
+        }
+
+        /// <inheritdoc cref="IDeepCloneable.DeepClone()" />
+        public object DeepClone()
+        {
+            return Activator.CreateInstance(this.GetType(), new object[] { this });
         }
 
         /// <summary>
@@ -58,7 +68,6 @@ namespace Microsoft.Management.UI.Internal
         /// <summary>
         /// Occurs when the values of this rule changes.
         /// </summary>
-        [field: NonSerialized]
         public event EventHandler EvaluationResultInvalidated;
 
         /// <summary>

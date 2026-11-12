@@ -9,7 +9,7 @@ namespace Microsoft.PowerShell.Commands
     /// <summary>
     /// The implementation of the "Remove-Alias" cmdlet.
     /// </summary>
-    [Cmdlet(VerbsCommon.Remove, "Alias", DefaultParameterSetName = "Default", HelpUri = "")]
+    [Cmdlet(VerbsCommon.Remove, "Alias", DefaultParameterSetName = "Default", HelpUri = "https://go.microsoft.com/fwlink/?linkid=2097127")]
     [Alias("ral")]
     public class RemoveAliasCommand : PSCmdlet
     {
@@ -25,6 +25,7 @@ namespace Microsoft.PowerShell.Commands
         /// The scope parameter for the command determines which scope the alias is removed from.
         /// </summary>
         [Parameter]
+        [ArgumentCompleter(typeof(ScopeArgumentCompleter))]
         public string Scope { get; set; }
 
         /// <summary>

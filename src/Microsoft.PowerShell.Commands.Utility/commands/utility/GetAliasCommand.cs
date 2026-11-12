@@ -51,6 +51,7 @@ namespace Microsoft.PowerShell.Commands
         /// which scope the aliases are retrieved from.
         /// </summary>
         [Parameter]
+        [ArgumentCompleter(typeof(ScopeArgumentCompleter))]
         public string Scope { get; set; }
 
         /// <summary>
@@ -181,7 +182,7 @@ namespace Microsoft.PowerShell.Commands
             }
 
             results.Sort(
-                (AliasInfo left, AliasInfo right) => StringComparer.CurrentCultureIgnoreCase.Compare(left.Name, right.Name));
+                static (AliasInfo left, AliasInfo right) => StringComparer.CurrentCultureIgnoreCase.Compare(left.Name, right.Name));
             foreach (AliasInfo alias in results)
             {
                 this.WriteObject(alias);

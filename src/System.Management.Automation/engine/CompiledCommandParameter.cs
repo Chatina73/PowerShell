@@ -4,6 +4,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Linq;
 using System.Reflection;
 
@@ -440,8 +441,7 @@ namespace System.Management.Automation
             ValidateArgumentsAttribute validateAttr = attribute as ValidateArgumentsAttribute;
             if (validateAttr != null)
             {
-                if (validationAttributes == null)
-                    validationAttributes = new Collection<ValidateArgumentsAttribute>();
+                validationAttributes ??= new Collection<ValidateArgumentsAttribute>();
                 validationAttributes.Add(validateAttr);
                 if ((attribute is ValidateNotNullAttribute) || (attribute is ValidateNotNullOrEmptyAttribute))
                 {
@@ -473,8 +473,7 @@ namespace System.Management.Automation
             ArgumentTransformationAttribute argumentAttr = attribute as ArgumentTransformationAttribute;
             if (argumentAttr != null)
             {
-                if (argTransformationAttributes == null)
-                    argTransformationAttributes = new Collection<ArgumentTransformationAttribute>();
+                argTransformationAttributes ??= new Collection<ArgumentTransformationAttribute>();
                 argTransformationAttributes.Add(argumentAttr);
                 return;
             }
@@ -625,6 +624,13 @@ namespace System.Management.Automation
                 return;
             }
 
+            if (typeof(StringCollection).IsAssignableFrom(type))
+            {
+                ParameterCollectionType = ParameterCollectionType.IList;
+                ElementType = typeof(string);
+                return;
+            }
+
             bool implementsIList = (type.GetInterface(nameof(IList)) != null);
 
             // Look for class Collection<T>.  Collection<T> implements IList, and also IList
@@ -649,7 +655,7 @@ namespace System.Management.Automation
             // to an ICollection<T> is via reflected calls to Add(T),
             // but the advantage over plain IList is that we can typecast the elements.
             Type interfaceICollection =
-                Array.Find(interfaces, i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICollection<>));
+                Array.Find(interfaces, static i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICollection<>));
             if (interfaceICollection != null)
             {
                 // We only deal with the first type for which ICollection<T> is implemented

@@ -230,8 +230,7 @@ namespace Microsoft.PowerShell.Commands
                 {
                     if (!Force)
                     {
-                        PSMethod memberAsPSMethod = member as PSMethod;
-                        if ((memberAsPSMethod != null) && (memberAsPSMethod.IsSpecial))
+                        if ((member is PSMethod memberAsPSMethod) && (memberAsPSMethod.IsSpecial))
                         {
                             continue;
                         }
@@ -249,7 +248,7 @@ namespace Microsoft.PowerShell.Commands
             }
         }
 
-        private class MemberComparer : System.Collections.Generic.IComparer<MemberDefinition>
+        private sealed class MemberComparer : System.Collections.Generic.IComparer<MemberDefinition>
         {
             public int Compare(MemberDefinition first, MemberDefinition second)
             {

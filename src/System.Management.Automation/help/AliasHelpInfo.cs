@@ -8,7 +8,7 @@ namespace System.Management.Automation
     /// <summary>
     /// Stores help information related to Alias Commands.
     /// </summary>
-    internal class AliasHelpInfo : HelpInfo
+    internal sealed class AliasHelpInfo : HelpInfo
     {
         /// <summary>
         /// Initializes a new instance of the AliasHelpInfo class.
@@ -40,8 +40,7 @@ namespace System.Management.Automation
             }
 
             _fullHelpObject.TypeNames.Clear();
-            _fullHelpObject.TypeNames.Add(string.Format(Globalization.CultureInfo.InvariantCulture,
-                "AliasHelpInfo#{0}", Name));
+            _fullHelpObject.TypeNames.Add(string.Create(Globalization.CultureInfo.InvariantCulture, $"AliasHelpInfo#{Name}"));
             _fullHelpObject.TypeNames.Add("AliasHelpInfo");
             _fullHelpObject.TypeNames.Add("HelpInfo");
         }

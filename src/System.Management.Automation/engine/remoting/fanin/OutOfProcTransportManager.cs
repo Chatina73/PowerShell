@@ -75,7 +75,8 @@ namespace System.Management.Automation.Remoting
 
         internal static string CreateDataPacket(byte[] data, DataPriorityType streamType, Guid psGuid)
         {
-            string result = string.Format(CultureInfo.InvariantCulture,
+            string result = string.Format(
+                CultureInfo.InvariantCulture,
                 "<{0} {1}='{2}' {3}='{4}'>{5}</{0}>",
                 PS_OUT_OF_PROC_DATA_TAG,
                 PS_OUT_OF_PROC_STREAM_ATTRIBUTE,
@@ -131,7 +132,8 @@ namespace System.Management.Automation.Remoting
         /// <returns></returns>
         private static string CreatePSGuidPacket(string element, Guid psGuid)
         {
-            string result = string.Format(CultureInfo.InvariantCulture,
+            string result = string.Format(
+                CultureInfo.InvariantCulture,
                 "<{0} {1}='{2}' />",
                 element,
                 PS_OUT_OF_PROC_PSGUID_ATTRIBUTE,
@@ -412,6 +414,19 @@ namespace System.Management.Automation.Remoting
         private readonly TextWriter _writer;
         private bool _isStopped;
         private readonly object _syncObject = new object();
+        private const string _errorPrepend = "__NamedPipeError__:";
+
+        #endregion
+
+        #region Properties
+
+        /// <summary>
+        /// Prefix for transport error message.
+        /// </summary>
+        public static string ErrorPrefix
+        {
+            get => _errorPrepend;
+        }
 
         #endregion
 
@@ -421,9 +436,13 @@ namespace System.Management.Automation.Remoting
         /// Constructs the wrapper.
         /// </summary>
         /// <param name="writerToWrap"></param>
-        internal OutOfProcessTextWriter(TextWriter writerToWrap)
+        public OutOfProcessTextWriter(TextWriter writerToWrap)
         {
-            Dbg.Assert(writerToWrap != null, "Cannot wrap a null writer.");
+            if (writerToWrap is null)
+            {
+                throw new PSArgumentNullException(nameof(writerToWrap));
+            }
+
             _writer = writerToWrap;
         }
 
@@ -435,7 +454,7 @@ namespace System.Management.Automation.Remoting
         /// Calls writer.WriteLine() with data.
         /// </summary>
         /// <param name="data"></param>
-        internal virtual void WriteLine(string data)
+        public virtual void WriteLine(string data)
         {
             if (_isStopped)
             {
@@ -467,7 +486,10 @@ namespace System.Management.Automation.Remoting
 
 namespace System.Management.Automation.Remoting.Client
 {
-    internal abstract class OutOfProcessClientSessionTransportManagerBase : BaseClientSessionTransportManager
+    /// <summary>
+    /// Client session transport manager abstract base class.
+    /// </summary>
+    public abstract class ClientSessionTransportManagerBase : BaseClientSessionTransportManager
     {
         #region Data
 
@@ -477,15 +499,17 @@ namespace System.Management.Automation.Remoting.Client
         private OutOfProcessUtils.DataProcessingDelegates _dataProcessingCallbacks;
         private readonly Dictionary<Guid, OutOfProcessClientCommandTransportManager> _cmdTransportManagers;
         private readonly Timer _closeTimeOutTimer;
-
-        protected OutOfProcessTextWriter stdInWriter;
-        protected PowerShellTraceSource _tracer;
+        internal PowerShellTraceSource _tracer;
+        internal OutOfProcessTextWriter _messageWriter;
 
         #endregion
 
         #region Constructor
 
-        internal OutOfProcessClientSessionTransportManagerBase(
+        /// <summary>
+        /// Constructor.
+        /// </summary>
+        protected ClientSessionTransportManagerBase(
             Guid runspaceId,
             PSRemotingCryptoHelper cryptoHelper)
             : base(runspaceId, cryptoHelper)
@@ -505,7 +529,7 @@ namespace System.Management.Automation.Remoting.Client
             _dataProcessingCallbacks.ClosePacketReceived += new OutOfProcessUtils.ClosePacketReceived(OnClosePacketReceived);
             _dataProcessingCallbacks.CloseAckPacketReceived += new OutOfProcessUtils.CloseAckPacketReceived(OnCloseAckReceived);
 
-            dataToBeSent.Fragmentor = base.Fragmentor;
+            dataToBeSent.Fragmentor = Fragmentor;
             // session transport manager can receive unlimited data..however each object is limited
             // by maxRecvdObjectSize. this is to allow clients to use a session for an unlimited time..
             // also the messages that can be sent to a session are limited and very controlled.
@@ -546,7 +570,7 @@ namespace System.Management.Automation.Remoting.Client
         /// <summary>
         /// Closes the server process.
         /// </summary>
-        internal override void CloseAsync()
+        public override void CloseAsync()
         {
             bool shouldRaiseCloseCompleted = false;
             lock (syncObject)
@@ -560,7 +584,7 @@ namespace System.Management.Automation.Remoting.Client
                 // will know that we are closing.
                 isClosed = true;
 
-                if (stdInWriter == null)
+                if (_messageWriter == null)
                 {
                     // this will happen if CloseAsync() is called
                     // before ConnectAsync()..in which case we
@@ -586,12 +610,12 @@ namespace System.Management.Automation.Remoting.Client
             try
             {
                 // send Close signal to the server and let it die gracefully.
-                stdInWriter.WriteLine(OutOfProcessUtils.CreateClosePacket(Guid.Empty));
+                _messageWriter.WriteLine(OutOfProcessUtils.CreateClosePacket(Guid.Empty));
 
                 // start the timer..so client can fail deterministically
                 _closeTimeOutTimer.Change(60 * 1000, Timeout.Infinite);
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException || ex is ObjectDisposedException)
             {
                 // Cannot communicate with server.  Allow client to complete close operation.
                 shouldRaiseCloseCompleted = true;
@@ -618,7 +642,7 @@ namespace System.Management.Automation.Remoting.Client
             Dbg.Assert(cmd != null, "Cmd cannot be null");
 
             OutOfProcessClientCommandTransportManager result = new
-                OutOfProcessClientCommandTransportManager(cmd, noInput, this, stdInWriter);
+                OutOfProcessClientCommandTransportManager(cmd, noInput, this, _messageWriter);
             AddCommandTransportManager(cmd.InstanceId, result);
 
             return result;
@@ -628,37 +652,14 @@ namespace System.Management.Automation.Remoting.Client
         /// Terminates the server process and disposes other resources.
         /// </summary>
         /// <param name="isDisposing"></param>
-        internal override void Dispose(bool isDisposing)
+        protected override void Dispose(bool isDisposing)
         {
             base.Dispose(isDisposing);
             if (isDisposing)
             {
                 _cmdTransportManagers.Clear();
                 _closeTimeOutTimer.Dispose();
-
-                // Stop session processing thread.
-                try
-                {
-                    _sessionMessageQueue.CompleteAdding();
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Object already disposed.
-                }
-
-                _sessionMessageQueue.Dispose();
-
-                // Stop command processing thread.
-                try
-                {
-                    _commandMessageQueue.CompleteAdding();
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Object already disposed.
-                }
-
-                _commandMessageQueue.Dispose();
+                DisposeMessageQueue();
             }
         }
 
@@ -716,6 +717,9 @@ namespace System.Management.Automation.Remoting.Client
             CleanupConnection();
         }
 
+        /// <summary>
+        /// Optional additional connection clean up after a connection is closed.
+        /// </summary>
         protected abstract void CleanupConnection();
 
         private void ProcessMessageProc(object state)
@@ -754,6 +758,9 @@ namespace System.Management.Automation.Remoting.Client
 
         private const string SESSIONDMESSAGETAG = "PSGuid='00000000-0000-0000-0000-000000000000'";
 
+        /// <summary>
+        /// Handles protocol output data from a transport.
+        /// </summary>
         protected void HandleOutputDataReceived(string data)
         {
             if (string.IsNullOrEmpty(data))
@@ -785,6 +792,9 @@ namespace System.Management.Automation.Remoting.Client
             }
         }
 
+        /// <summary>
+        /// Handles protocol error data.
+        /// </summary>
         protected void HandleErrorDataReceived(string data)
         {
             lock (syncObject)
@@ -801,57 +811,13 @@ namespace System.Management.Automation.Remoting.Client
             RaiseErrorHandler(new TransportErrorOccuredEventArgs(psrte, TransportMethodEnum.Unknown));
         }
 
-        protected void OnExited(object sender, EventArgs e)
-        {
-            TransportMethodEnum transportMethod = TransportMethodEnum.Unknown;
-            lock (syncObject)
-            {
-                // There is no need to return when IsClosed==true here as in a legitimate case process exits
-                // after Close is called..In that legitimate case, Exit handler is removed before
-                // calling Exit..So, this Exit must have been called abnormally.
-                if (isClosed)
-                {
-                    transportMethod = TransportMethodEnum.CloseShellOperationEx;
-                }
-
-                // dont let the writer write new data as the process is exited.
-                // Not assigning null to stdInWriter to fix the race condition between OnExited() and CloseAsync() methods.
-                //
-                stdInWriter.StopWriting();
-            }
-
-            // Try to get details about why the process exited
-            // and if they're not available, give information as to why
-            string processDiagnosticMessage;
-            try
-            {
-                var jobProcess = (Process)sender;
-                processDiagnosticMessage = StringUtil.Format(
-                    RemotingErrorIdStrings.ProcessExitInfo,
-                    jobProcess.ExitCode,
-                    jobProcess.StandardOutput.ReadToEnd(),
-                    jobProcess.StandardError.ReadToEnd());
-            }
-            catch (Exception exception)
-            {
-                processDiagnosticMessage = StringUtil.Format(
-                    RemotingErrorIdStrings.ProcessInfoNotRecoverable,
-                    exception.Message);
-            }
-
-            string exitErrorMsg = StringUtil.Format(
-                RemotingErrorIdStrings.IPCServerProcessExited,
-                processDiagnosticMessage);
-            var psrte = new PSRemotingTransportException(
-                PSRemotingErrorId.IPCServerProcessExited,
-                exitErrorMsg);
-            RaiseErrorHandler(new TransportErrorOccuredEventArgs(psrte, transportMethod));
-        }
-
         #endregion
 
         #region Sending Data related Methods
 
+        /// <summary>
+        /// Send any data packet in the queue.
+        /// </summary>
         protected void SendOneItem()
         {
             DataPriorityType priorityType;
@@ -888,7 +854,7 @@ namespace System.Management.Automation.Remoting.Client
                     return;
                 }
 
-                stdInWriter.WriteLine(OutOfProcessUtils.CreateDataPacket(data,
+                _messageWriter.WriteLine(OutOfProcessUtils.CreateDataPacket(data,
                     priorityType,
                     Guid.Empty));
             }
@@ -931,13 +897,11 @@ namespace System.Management.Automation.Remoting.Client
             {
                 // this is for a command
                 OutOfProcessClientCommandTransportManager cmdTM = GetCommandTransportManager(psGuid);
-                if (cmdTM != null)
-                {
-                    // not throwing the exception in null case as the command might have already
-                    // closed. The RS data structure handler does not wait for the close ack before
-                    // it clears the command transport manager..so this might happen.
-                    cmdTM.OnRemoteCmdDataReceived(rawData, streamTemp);
-                }
+
+                // not throwing the exception in null case as the command might have already
+                // closed. The RS data structure handler does not wait for the close ack before
+                // it clears the command transport manager..so this might happen.
+                cmdTM?.OnRemoteCmdDataReceived(rawData, streamTemp);
             }
         }
 
@@ -952,13 +916,11 @@ namespace System.Management.Automation.Remoting.Client
             {
                 // this is for a command
                 OutOfProcessClientCommandTransportManager cmdTM = GetCommandTransportManager(psGuid);
-                if (cmdTM != null)
-                {
-                    // not throwing the exception in null case as the command might have already
-                    // closed. The RS data structure handler does not wait for the close ack before
-                    // it clears the command transport manager..so this might happen.
-                    cmdTM.OnRemoteCmdSendCompleted();
-                }
+
+                // not throwing the exception in null case as the command might have already
+                // closed. The RS data structure handler does not wait for the close ack before
+                // it clears the command transport manager..so this might happen.
+                cmdTM?.OnRemoteCmdSendCompleted();
             }
         }
 
@@ -986,7 +948,8 @@ namespace System.Management.Automation.Remoting.Client
 
         private void OnSignalPacketReceived(Guid psGuid)
         {
-            throw new PSRemotingTransportException(PSRemotingErrorId.IPCUnknownElementReceived,
+            throw new PSRemotingTransportException(
+                PSRemotingErrorId.IPCUnknownElementReceived,
                 RemotingErrorIdStrings.IPCUnknownElementReceived,
                    OutOfProcessUtils.PS_OUT_OF_PROC_SIGNAL_TAG);
         }
@@ -995,17 +958,15 @@ namespace System.Management.Automation.Remoting.Client
         {
             if (psGuid == Guid.Empty)
             {
-                throw new PSRemotingTransportException(PSRemotingErrorId.IPCNoSignalForSession,
+                throw new PSRemotingTransportException(
+                    PSRemotingErrorId.IPCNoSignalForSession,
                     RemotingErrorIdStrings.IPCNoSignalForSession,
                     OutOfProcessUtils.PS_OUT_OF_PROC_SIGNAL_ACK_TAG);
             }
             else
             {
                 OutOfProcessClientCommandTransportManager cmdTM = GetCommandTransportManager(psGuid);
-                if (cmdTM != null)
-                {
-                    cmdTM.OnRemoteCmdSignalCompleted();
-                }
+                cmdTM?.OnRemoteCmdSignalCompleted();
             }
         }
 
@@ -1035,12 +996,10 @@ namespace System.Management.Automation.Remoting.Client
                 _tracer.WriteMessage("OutOfProcessClientSessionTransportManager.OnCloseAckReceived, in progress command count should be greater than zero: " + commandCount + ", RunSpacePool Id : " + this.RunspacePoolInstanceId + ", psGuid : " + psGuid.ToString());
 
                 OutOfProcessClientCommandTransportManager cmdTM = GetCommandTransportManager(psGuid);
-                if (cmdTM != null)
-                {
-                    // this might legitimately happen if cmd is already closed before we get an
-                    // ACK back from server.
-                    cmdTM.OnCloseCmdCompleted();
-                }
+
+                // this might legitimately happen if cmd is already closed before we get an
+                // ACK back from server.
+                cmdTM?.OnCloseCmdCompleted();
             }
         }
 
@@ -1055,9 +1014,71 @@ namespace System.Management.Automation.Remoting.Client
         }
 
         #endregion
+
+        #region Protected Methods
+
+        /// <summary>
+        /// Standard handler for data received, to be used by custom transport implementations.
+        /// </summary>
+        /// <param name="data">Protocol text data received by custom transport.</param>
+        protected void HandleDataReceived(string data)
+        {
+            if (data.StartsWith(OutOfProcessTextWriter.ErrorPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                // Error message from the server.
+                string errorData = data.Substring(OutOfProcessTextWriter.ErrorPrefix.Length);
+                HandleErrorDataReceived(errorData);
+            }
+            else
+            {
+                // Normal output data.
+                HandleOutputDataReceived(data);
+            }
+        }
+
+        /// <summary>
+        /// Creates the transport message writer from the provided TexWriter object.
+        /// </summary>
+        /// <param name"textWriter">TextWriter object to be used in the message writer.</param>
+        protected void SetMessageWriter(TextWriter textWriter)
+        {
+            _messageWriter = new OutOfProcessTextWriter(textWriter);
+        }
+
+        /// <summary>
+        /// Disposes message queue components.
+        /// </summary>
+        protected void DisposeMessageQueue()
+        {
+            // Stop session processing thread.
+            try
+            {
+                _sessionMessageQueue.CompleteAdding();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Object already disposed.
+            }
+
+            _sessionMessageQueue.Dispose();
+
+            // Stop command processing thread.
+            try
+            {
+                _commandMessageQueue.CompleteAdding();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Object already disposed.
+            }
+
+            _commandMessageQueue.Dispose();
+        }
+
+        #endregion
     }
 
-    internal class OutOfProcessClientSessionTransportManager : OutOfProcessClientSessionTransportManagerBase
+    internal class OutOfProcessClientSessionTransportManager : ClientSessionTransportManagerBase
     {
         #region Private Data
 
@@ -1085,14 +1106,14 @@ namespace System.Management.Automation.Remoting.Client
         /// <summary>
         /// Launch a new Process (pwsh -s) to perform remoting. This is used by *-Job cmdlets
         /// to support background jobs without depending on WinRM (WinRM has complex requirements like
-        /// elevation to support local machine remoting)
+        /// elevation to support local machine remoting).
         /// </summary>
         /// <exception cref="System.InvalidOperationException">
         /// </exception>
         /// <exception cref="System.ComponentModel.Win32Exception">
         /// 1. There was an error in opening the associated file.
         /// </exception>
-        internal override void CreateAsync()
+        public override void CreateAsync()
         {
             if (_connectionInfo != null)
             {
@@ -1133,8 +1154,8 @@ namespace System.Management.Automation.Remoting.Client
                     _processInstance.Start();
 
                     StartRedirectionReaderThreads(_serverProcess);
-                    stdInWriter = new OutOfProcessTextWriter(_serverProcess.StandardInput);
-                    _processInstance.StdInWriter = stdInWriter;
+                    SetMessageWriter(_serverProcess.StandardInput);
+                    _processInstance.StdInWriter = _messageWriter;
                 }
             }
             catch (System.ComponentModel.Win32Exception w32e)
@@ -1244,7 +1265,7 @@ namespace System.Management.Automation.Remoting.Client
         /// Kills the server process and disposes other resources.
         /// </summary>
         /// <param name="isDisposing"></param>
-        internal override void Dispose(bool isDisposing)
+        protected override void Dispose(bool isDisposing)
         {
             base.Dispose(isDisposing);
             if (isDisposing)
@@ -1308,10 +1329,57 @@ namespace System.Management.Automation.Remoting.Client
             }
         }
 
+        private void OnExited(object sender, EventArgs e)
+        {
+            TransportMethodEnum transportMethod = TransportMethodEnum.Unknown;
+            lock (syncObject)
+            {
+                // There is no need to return when IsClosed==true here as in a legitimate case process exits
+                // after Close is called..In that legitimate case, Exit handler is removed before
+                // calling Exit..So, this Exit must have been called abnormally.
+                if (isClosed)
+                {
+                    transportMethod = TransportMethodEnum.CloseShellOperationEx;
+                }
+
+                // dont let the writer write new data as the process is exited.
+                // Not assigning null to stdInWriter to fix the race condition between OnExited() and CloseAsync() methods.
+                //
+                _messageWriter.StopWriting();
+            }
+
+            // Try to get details about why the process exited
+            // and if they're not available, give information as to why
+            string processDiagnosticMessage;
+            try
+            {
+                var jobProcess = (Process)sender;
+                processDiagnosticMessage = StringUtil.Format(
+                    RemotingErrorIdStrings.ProcessExitInfo,
+                    jobProcess.ExitCode,
+                    jobProcess.StandardOutput.ReadToEnd(),
+                    jobProcess.StandardError.ReadToEnd());
+            }
+            catch (Exception exception)
+            {
+                processDiagnosticMessage = StringUtil.Format(
+                    RemotingErrorIdStrings.ProcessInfoNotRecoverable,
+                    exception.Message);
+            }
+
+            string exitErrorMsg = StringUtil.Format(
+                RemotingErrorIdStrings.IPCServerProcessExited,
+                processDiagnosticMessage);
+            var psrte = new PSRemotingTransportException(
+                PSRemotingErrorId.IPCServerProcessExited,
+                exitErrorMsg);
+            RaiseErrorHandler(new TransportErrorOccuredEventArgs(psrte, transportMethod));
+        }
+
         #endregion
     }
 
-    internal abstract class HyperVSocketClientSessionTransportManagerBase : OutOfProcessClientSessionTransportManagerBase
+    internal abstract class HyperVSocketClientSessionTransportManagerBase : ClientSessionTransportManagerBase
     {
         #region Data
 
@@ -1333,16 +1401,13 @@ namespace System.Management.Automation.Remoting.Client
 
         #region Overrides
 
-        internal override void Dispose(bool isDisposing)
+        protected override void Dispose(bool isDisposing)
         {
             base.Dispose(isDisposing);
 
             if (isDisposing)
             {
-                if (_client != null)
-                {
-                    _client.Dispose();
-                }
+                _client?.Dispose();
             }
         }
 
@@ -1411,10 +1476,10 @@ namespace System.Management.Automation.Remoting.Client
             {
                 if (e is ArgumentOutOfRangeException)
                 {
-                    Dbg.Assert(false, "Need to adjust transport fragmentor to accomodate read buffer size.");
+                    Dbg.Assert(false, "Need to adjust transport fragmentor to accommodate read buffer size.");
                 }
 
-                string errorMsg = (e.Message != null) ? e.Message : string.Empty;
+                string errorMsg = e.Message ?? string.Empty;
                 _tracer.WriteMessage("HyperVSocketClientSessionTransportManager", "StartReaderThread", Guid.Empty,
                     "Transport manager reader thread ended with error: {0}", errorMsg);
 
@@ -1477,10 +1542,11 @@ namespace System.Management.Automation.Remoting.Client
         /// Create a Hyper-V socket connection to the target process and set up
         /// transport reader/writer.
         /// </summary>
-        internal override void CreateAsync()
+        public override void CreateAsync()
         {
-            _client = new RemoteSessionHyperVSocketClient(_vmGuid, true);
-            if (!_client.Connect(_networkCredential, _configurationName, true))
+            // isFirstConnection: true - specifies to use VM_SESSION_SERVICE_ID socket.
+            _client = new RemoteSessionHyperVSocketClient(_vmGuid, useBackwardsCompatibleMode: false, isFirstConnection: true);
+            if (!_client.Connect(_networkCredential, _configurationName, isFirstConnection: true))
             {
                 _client.Dispose();
                 throw new PSInvalidOperationException(
@@ -1490,11 +1556,14 @@ namespace System.Management.Automation.Remoting.Client
                     ErrorCategory.InvalidOperation,
                     null);
             }
+            bool useBackwardsCompatibleMode = _client.UseBackwardsCompatibleMode;
+            string token = _client.AuthenticationToken;
 
-            // TODO: remove below 3 lines when Hyper-V socket duplication is supported in .NET framework.
             _client.Dispose();
-            _client = new RemoteSessionHyperVSocketClient(_vmGuid, false);
-            if (!_client.Connect(_networkCredential, _configurationName, false))
+
+            // isFirstConnection: false - specifies to use the SESSION_SERVICE_ID_2 socket.
+            _client = new RemoteSessionHyperVSocketClient(_vmGuid, useBackwardsCompatibleMode: useBackwardsCompatibleMode, isFirstConnection: false, authenticationToken: token);
+            if (!_client.Connect(_networkCredential, _configurationName, isFirstConnection: false))
             {
                 _client.Dispose();
                 throw new PSInvalidOperationException(
@@ -1506,7 +1575,7 @@ namespace System.Management.Automation.Remoting.Client
             }
 
             // Create writer for Hyper-V socket.
-            stdInWriter = new OutOfProcessTextWriter(_client.TextWriter);
+            SetMessageWriter(_client.TextWriter);
 
             // Create reader thread for Hyper-V socket.
             StartReaderThread(_client.TextReader);
@@ -1550,9 +1619,11 @@ namespace System.Management.Automation.Remoting.Client
         /// Create a Hyper-V socket connection to the target process and set up
         /// transport reader/writer.
         /// </summary>
-        internal override void CreateAsync()
+        public override void CreateAsync()
         {
-            _client = new RemoteSessionHyperVSocketClient(_targetGuid, false, true);
+            // Container scenario is not working.
+            // When we fix it we need to setup the token in ContainerConnectionInfo and use it here.
+            _client = new RemoteSessionHyperVSocketClient(_targetGuid, isFirstConnection: false, useBackwardsCompatibleMode: false, isContainer: true);
             if (!_client.Connect(null, string.Empty, false))
             {
                 _client.Dispose();
@@ -1565,7 +1636,7 @@ namespace System.Management.Automation.Remoting.Client
             }
 
             // Create writer for Hyper-V socket.
-            stdInWriter = new OutOfProcessTextWriter(_client.TextWriter);
+            SetMessageWriter(_client.TextWriter);
 
             // Create reader thread for Hyper-V socket.
             StartReaderThread(_client.TextReader);
@@ -1574,7 +1645,7 @@ namespace System.Management.Automation.Remoting.Client
         #endregion
     }
 
-    internal sealed class SSHClientSessionTransportManager : OutOfProcessClientSessionTransportManagerBase
+    internal sealed class SSHClientSessionTransportManager : ClientSessionTransportManagerBase
     {
         #region Data
 
@@ -1584,6 +1655,7 @@ namespace System.Management.Automation.Remoting.Client
         private StreamReader _stdOutReader;
         private StreamReader _stdErrReader;
         private bool _connectionEstablished;
+        private Timer _connectionTimer;
 
         private const string _threadName = "SSHTransport Reader Thread";
 
@@ -1606,7 +1678,7 @@ namespace System.Management.Automation.Remoting.Client
 
         #region Overrides
 
-        internal override void Dispose(bool isDisposing)
+        protected override void Dispose(bool isDisposing)
         {
             base.Dispose(isDisposing);
 
@@ -1625,7 +1697,7 @@ namespace System.Management.Automation.Remoting.Client
         /// Create an SSH connection to the target host and set up
         /// transport reader/writer.
         /// </summary>
-        internal override void CreateAsync()
+        public override void CreateAsync()
         {
             // Create the ssh client process with connection to host target.
             _sshProcessId = _connectionInfo.StartSSHProcess(
@@ -1637,13 +1709,56 @@ namespace System.Management.Automation.Remoting.Client
             StartErrorThread(_stdErrReader);
 
             // Create writer for named pipe.
-            stdInWriter = new OutOfProcessTextWriter(_stdInWriter);
+            SetMessageWriter(_stdInWriter);
 
             // Create reader thread and send first PSRP message.
             StartReaderThread(_stdOutReader);
+
+            if (_connectionInfo.ConnectingTimeout < 0)
+            {
+                return;
+            }
+
+            // Start connection timeout timer if requested.
+            // Timer callback occurs only once after timeout time.
+            _connectionTimer = new Timer(
+                callback: (_) =>
+                {
+                    if (_connectionEstablished)
+                    {
+                        return;
+                    }
+
+                    // Detect if SSH client process terminates prematurely.
+                    bool sshTerminated = false;
+                    try
+                    {
+                        using (var sshProcess = Process.GetProcessById(_sshProcessId))
+                        {
+                            sshTerminated = sshProcess == null || sshProcess.Handle == IntPtr.Zero || sshProcess.HasExited;
+                        }
+                    }
+                    catch
+                    {
+                        sshTerminated = true;
+                    }
+
+                    var errorMessage = StringUtil.Format(RemotingErrorIdStrings.SSHClientConnectTimeout, _connectionInfo.ConnectingTimeout / 1000);
+                    if (sshTerminated)
+                    {
+                        errorMessage += RemotingErrorIdStrings.SSHClientConnectProcessTerminated;
+                    }
+
+                    // Report error and terminate connection attempt.
+                    HandleSSHError(
+                        new PSRemotingTransportException(errorMessage));
+                },
+                state: null,
+                dueTime: _connectionInfo.ConnectingTimeout,
+                period: Timeout.Infinite);
         }
 
-        internal override void CloseAsync()
+        public override void CloseAsync()
         {
             base.CloseAsync();
 
@@ -1660,14 +1775,20 @@ namespace System.Management.Automation.Remoting.Client
 
         private void CloseConnection()
         {
+            // Ensure message queue is disposed.
+            DisposeMessageQueue();
+
+            var connectionTimer = Interlocked.Exchange(ref _connectionTimer, null);
+            connectionTimer?.Dispose();
+
             var stdInWriter = Interlocked.Exchange(ref _stdInWriter, null);
-            if (stdInWriter != null) { stdInWriter.Dispose(); }
+            stdInWriter?.Dispose();
 
             var stdOutReader = Interlocked.Exchange(ref _stdOutReader, null);
-            if (stdOutReader != null) { stdOutReader.Dispose(); }
+            stdOutReader?.Dispose();
 
             var stdErrReader = Interlocked.Exchange(ref _stdErrReader, null);
-            if (stdErrReader != null) { stdErrReader.Dispose(); }
+            stdErrReader?.Dispose();
 
             // The CloseConnection() method can be called multiple times from multiple places.
             // Set the _sshProcessId to zero here so that we go through the work of finding
@@ -1677,11 +1798,7 @@ namespace System.Management.Automation.Remoting.Client
             {
                 try
                 {
-                    var sshProcess = System.Diagnostics.Process.GetProcessById(sshProcessId);
-                    if ((sshProcess != null) && (sshProcess.Handle != IntPtr.Zero) && !sshProcess.HasExited)
-                    {
-                        sshProcess.Kill();
-                    }
+                    _connectionInfo.KillSSHProcess(sshProcessId);
                 }
                 catch (ArgumentException) { }
                 catch (InvalidOperationException) { }
@@ -1708,7 +1825,16 @@ namespace System.Management.Automation.Remoting.Client
 
                 while (true)
                 {
-                    string error = ReadError(reader);
+                    string error;
+
+                    // Blocking read from StdError stream
+                    error = reader.ReadLine();
+
+                    if (error == null)
+                    {
+                        // Stream is closed unexpectedly.
+                        throw new PSInvalidOperationException(RemotingErrorIdStrings.SSHAbruptlyTerminated);
+                    }
 
                     if (error.Length == 0)
                     {
@@ -1716,12 +1842,15 @@ namespace System.Management.Automation.Remoting.Client
                         continue;
                     }
 
-                    // Any SSH client error results in a broken session.
-                    PSRemotingTransportException psrte = new PSRemotingTransportException(
-                        PSRemotingErrorId.IPCServerProcessReportedError,
-                        RemotingErrorIdStrings.IPCServerProcessReportedError,
-                        StringUtil.Format(RemotingErrorIdStrings.SSHClientEndWithErrorMessage, error));
-                    HandleSSHError(psrte);
+                    try
+                    {
+                        // Messages in error stream from ssh are unreliable, and may just be warnings or
+                        // banner text.
+                        // So just report the messages but don't act on them.
+                        Console.WriteLine(error);
+                    }
+                    catch (IOException)
+                    { }
                 }
             }
             catch (ObjectDisposedException)
@@ -1730,7 +1859,7 @@ namespace System.Management.Automation.Remoting.Client
             }
             catch (Exception e)
             {
-                string errorMsg = (e.Message != null) ? e.Message : string.Empty;
+                string errorMsg = e.Message ?? string.Empty;
                 _tracer.WriteMessage("SSHClientSessionTransportManager", "ProcessErrorThread", Guid.Empty,
                     "Transport manager error thread ended with error: {0}", errorMsg);
 
@@ -1745,55 +1874,6 @@ namespace System.Management.Automation.Remoting.Client
         {
             RaiseErrorHandler(new TransportErrorOccuredEventArgs(psrte, TransportMethodEnum.CloseShellOperationEx));
             CloseConnection();
-        }
-
-        private static string ReadError(StreamReader reader)
-        {
-            // Blocking read from StdError stream
-            string error = reader.ReadLine();
-
-            if (error == null)
-            {
-                // Stream is closed unexpectedly.
-                throw new PSInvalidOperationException(RemotingErrorIdStrings.SSHAbruptlyTerminated);
-            }
-
-            if ((error.Length == 0) ||
-                error.Contains("WARNING:", StringComparison.OrdinalIgnoreCase))
-            {
-                // Handle as interactive warning message
-                Console.WriteLine(error);
-                return string.Empty;
-            }
-
-            // SSH may return a multi-line error message.
-            // The StdError pipe stream is open ended causing StreamReader read operations to block
-            // if there is no incoming data.  Since we don't know how many error message lines there
-            // will be we use an asynchronous read with timeout to prevent blocking indefinitely.
-            System.Text.StringBuilder sb = new Text.StringBuilder(error);
-            var running = true;
-            while (running)
-            {
-                try
-                {
-                    var task = reader.ReadLineAsync();
-                    if (task.Wait(1000) && (task.Result != null))
-                    {
-                        sb.Append(Environment.NewLine);
-                        sb.Append(task.Result);
-                    }
-                    else
-                    {
-                        running = false;
-                    }
-                }
-                catch (Exception)
-                {
-                    running = false;
-                }
-            }
-
-            return sb.ToString();
         }
 
         private void StartReaderThread(
@@ -1827,10 +1907,10 @@ namespace System.Management.Automation.Remoting.Client
                         break;
                     }
 
-                    if (data.StartsWith(System.Management.Automation.Remoting.Server.NamedPipeErrorTextWriter.ErrorPrepend, StringComparison.OrdinalIgnoreCase))
+                    if (data.StartsWith(OutOfProcessTextWriter.ErrorPrefix, StringComparison.OrdinalIgnoreCase))
                     {
                         // Error message from the server.
-                        string errorData = data.Substring(System.Management.Automation.Remoting.Server.NamedPipeErrorTextWriter.ErrorPrepend.Length);
+                        string errorData = data.Substring(OutOfProcessTextWriter.ErrorPrefix.Length);
                         HandleErrorDataReceived(errorData);
                     }
                     else
@@ -1851,10 +1931,10 @@ namespace System.Management.Automation.Remoting.Client
             {
                 if (e is ArgumentOutOfRangeException)
                 {
-                    Dbg.Assert(false, "Need to adjust transport fragmentor to accomodate read buffer size.");
+                    Dbg.Assert(false, "Need to adjust transport fragmentor to accommodate read buffer size.");
                 }
 
-                string errorMsg = (e.Message != null) ? e.Message : string.Empty;
+                string errorMsg = e.Message ?? string.Empty;
                 _tracer.WriteMessage("SSHClientSessionTransportManager", "ProcessReaderThread", Guid.Empty,
                     "Transport manager reader thread ended with error: {0}", errorMsg);
             }
@@ -1863,7 +1943,7 @@ namespace System.Management.Automation.Remoting.Client
         #endregion
     }
 
-    internal abstract class NamedPipeClientSessionTransportManagerBase : OutOfProcessClientSessionTransportManagerBase
+    internal abstract class NamedPipeClientSessionTransportManagerBase : ClientSessionTransportManagerBase
     {
         #region Data
 
@@ -1896,16 +1976,13 @@ namespace System.Management.Automation.Remoting.Client
 
         #region Overrides
 
-        internal override void Dispose(bool isDisposing)
+        protected override void Dispose(bool isDisposing)
         {
             base.Dispose(isDisposing);
 
             if (isDisposing)
             {
-                if (_clientPipe != null)
-                {
-                    _clientPipe.Dispose();
-                }
+                _clientPipe?.Dispose();
             }
         }
 
@@ -1957,17 +2034,7 @@ namespace System.Management.Automation.Remoting.Client
                         break;
                     }
 
-                    if (data.StartsWith(System.Management.Automation.Remoting.Server.NamedPipeErrorTextWriter.ErrorPrepend, StringComparison.OrdinalIgnoreCase))
-                    {
-                        // Error message from the server.
-                        string errorData = data.Substring(System.Management.Automation.Remoting.Server.NamedPipeErrorTextWriter.ErrorPrepend.Length);
-                        HandleErrorDataReceived(errorData);
-                    }
-                    else
-                    {
-                        // Normal output data.
-                        HandleOutputDataReceived(data);
-                    }
+                    HandleDataReceived(data);
                 }
             }
             catch (ObjectDisposedException)
@@ -1981,7 +2048,7 @@ namespace System.Management.Automation.Remoting.Client
                     Dbg.Assert(false, "Need to adjust transport fragmentor to accommodate read buffer size.");
                 }
 
-                string errorMsg = (e.Message != null) ? e.Message : string.Empty;
+                string errorMsg = e.Message ?? string.Empty;
                 _tracer.WriteMessage("NamedPipeClientSessionTransportManager", "StartReaderThread", Guid.Empty,
                     "Transport manager reader thread ended with error: {0}", errorMsg);
             }
@@ -2024,7 +2091,7 @@ namespace System.Management.Automation.Remoting.Client
         /// Create a named pipe connection to the target process and set up
         /// transport reader/writer.
         /// </summary>
-        internal override void CreateAsync()
+        public override void CreateAsync()
         {
             _clientPipe = string.IsNullOrEmpty(_connectionInfo.CustomPipeName) ?
                 new RemoteSessionNamedPipeClient(_connectionInfo.ProcessId, _connectionInfo.AppDomainName) :
@@ -2034,7 +2101,7 @@ namespace System.Management.Automation.Remoting.Client
             _clientPipe.Connect(_connectionInfo.OpenTimeout);
 
             // Create writer for named pipe.
-            stdInWriter = new OutOfProcessTextWriter(_clientPipe.TextWriter);
+            SetMessageWriter(_clientPipe.TextWriter);
 
             // Create reader thread for named pipe.
             StartReaderThread(_clientPipe.TextReader);
@@ -2047,13 +2114,7 @@ namespace System.Management.Automation.Remoting.Client
         /// <summary>
         /// Aborts an existing connection attempt.
         /// </summary>
-        public void AbortConnect()
-        {
-            if (_clientPipe != null)
-            {
-                _clientPipe.AbortConnect();
-            }
-        }
+        public void AbortConnect() => _clientPipe?.AbortConnect();
 
         #endregion
     }
@@ -2092,7 +2153,7 @@ namespace System.Management.Automation.Remoting.Client
         /// Create a named pipe connection to the target process in target container and set up
         /// transport reader/writer.
         /// </summary>
-        internal override void CreateAsync()
+        public override void CreateAsync()
         {
             _clientPipe = new ContainerSessionNamedPipeClient(
                 _connectionInfo.ContainerProc.ProcessId,
@@ -2103,7 +2164,7 @@ namespace System.Management.Automation.Remoting.Client
             _clientPipe.Connect(_connectionInfo.OpenTimeout);
 
             // Create writer for named pipe.
-            stdInWriter = new OutOfProcessTextWriter(_clientPipe.TextWriter);
+            SetMessageWriter(_clientPipe.TextWriter);
 
             // Create reader thread for named pipe.
             StartReaderThread(_clientPipe.TextReader);
@@ -2142,7 +2203,7 @@ namespace System.Management.Automation.Remoting.Client
         internal OutOfProcessClientCommandTransportManager(
             ClientRemotePowerShell cmd,
             bool noInput,
-            OutOfProcessClientSessionTransportManagerBase sessnTM,
+            ClientSessionTransportManagerBase sessnTM,
             OutOfProcessTextWriter stdInWriter) : base(cmd, sessnTM.CryptoHelper, sessnTM)
         {
             _stdInWriter = stdInWriter;
@@ -2160,7 +2221,7 @@ namespace System.Management.Automation.Remoting.Client
             throw new NotImplementedException(RemotingErrorIdStrings.IPCTransportConnectError);
         }
 
-        internal override void CreateAsync()
+        public override void CreateAsync()
         {
             PSEtwLog.LogAnalyticInformational(PSEventId.WSManCreateCommand, PSOpcode.Connect,
                                 PSTask.CreateRunspace,
@@ -2170,7 +2231,7 @@ namespace System.Management.Automation.Remoting.Client
             _stdInWriter.WriteLine(OutOfProcessUtils.CreateCommandPacket(powershellInstanceId));
         }
 
-        internal override void CloseAsync()
+        public override void CloseAsync()
         {
             lock (syncObject)
             {
@@ -2224,7 +2285,7 @@ namespace System.Management.Automation.Remoting.Client
             _signalTimeOutTimer.Change(60 * 1000, Timeout.Infinite);
         }
 
-        internal override void Dispose(bool isDisposing)
+        protected override void Dispose(bool isDisposing)
         {
             base.Dispose(isDisposing);
             if (isDisposing)
@@ -2449,6 +2510,12 @@ namespace System.Management.Automation.Remoting.Server
             _stdOutWriter = outWriter;
             _stdErrWriter = errWriter;
             _cmdTransportManagers = new Dictionary<Guid, OutOfProcessServerTransportManager>();
+
+            this.WSManTransportErrorOccured += (object sender, TransportErrorOccuredEventArgs e) =>
+            {
+                string msg = e.Exception.TransportMessage ?? e.Exception.InnerException?.Message ?? string.Empty;
+                _stdErrWriter.WriteLine(StringUtil.Format(RemotingErrorIdStrings.RemoteTransportError, msg));
+            };
         }
 
         #endregion

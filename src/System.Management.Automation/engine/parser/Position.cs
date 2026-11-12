@@ -15,12 +15,13 @@ namespace System.Management.Automation.Language
     /// <summary>
     /// Represents a single point in a script.  The script may come from a file or interactive input.
     /// </summary>
+#nullable enable
     public interface IScriptPosition
     {
         /// <summary>
         /// The name of the file, or if the script did not come from a file, then null.
         /// </summary>
-        string File { get; }
+        string? File { get; }
 
         /// <summary>
         /// The line number of the position, with the value 1 being the first line.
@@ -45,8 +46,9 @@ namespace System.Management.Automation.Language
         /// <summary>
         /// The complete script that this position is included in.
         /// </summary>
-        string GetFullScript();
+        string? GetFullScript();
     }
+#nullable restore
 
     /// <summary>
     /// Represents the a span of text in a script.
@@ -336,10 +338,7 @@ namespace System.Management.Automation.Language
 
         internal static bool IsWithin(this IScriptExtent extentToTest, IScriptExtent extent)
         {
-            return extentToTest.StartLineNumber >= extent.StartLineNumber &&
-                   extentToTest.EndLineNumber <= extent.EndLineNumber &&
-                   extentToTest.StartColumnNumber >= extent.StartColumnNumber &&
-                   extentToTest.EndColumnNumber <= extent.EndColumnNumber;
+            return extentToTest.StartOffset >= extent.StartOffset && extentToTest.EndOffset <= extent.EndOffset;
         }
 
         internal static bool IsAfter(this IScriptExtent extent, int line, int column)
@@ -354,10 +353,18 @@ namespace System.Management.Automation.Language
         {
             if (extent.StartLineNumber == line)
             {
-                if (column == 0) return true;
+                if (column == 0)
+                {
+                    return true;
+                }
+
                 if (column >= extent.StartColumnNumber)
                 {
-                    if (extent.EndLineNumber != extent.StartLineNumber) return true;
+                    if (extent.EndLineNumber != extent.StartLineNumber)
+                    {
+                        return true;
+                    }
+
                     return (column < extent.EndColumnNumber);
                 }
 
@@ -764,9 +771,9 @@ namespace System.Management.Automation.Language
                                                              _endPosition.ColumnNumber - _startPosition.ColumnNumber);
                     }
 
-                    return string.Format(CultureInfo.InvariantCulture, "{0}...{1}",
-                                         _startPosition.Line.Substring(_startPosition.ColumnNumber),
-                                         _endPosition.Line.Substring(0, _endPosition.ColumnNumber));
+                    var start = _startPosition.Line.AsSpan(_startPosition.ColumnNumber);
+                    var end = _endPosition.Line.AsSpan(0, _endPosition.ColumnNumber);
+                    return string.Create(CultureInfo.InvariantCulture, $"{start}...{end}");
                 }
                 else
                 {

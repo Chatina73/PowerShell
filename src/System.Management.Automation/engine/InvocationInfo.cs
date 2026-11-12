@@ -272,6 +272,18 @@ namespace System.Management.Automation
         }
 
         /// <summary>
+        /// The full text of the invocation statement, may span multiple lines.
+        /// </summary>
+        /// <value>Statement that was entered to invoke this command.</value>
+        public string Statement
+        {
+            get
+            {
+                return ScriptPosition.Text;
+            }
+        }
+
+        /// <summary>
         /// Formatted message indicating where the cmdlet appeared
         /// in the line.
         /// </summary>
@@ -440,11 +452,11 @@ namespace System.Management.Automation
             if (extent != null)
             {
                 extent.ToPSObjectForRemoting(psObject);
-                RemotingEncoder.AddNoteProperty(psObject, "SerializeExtent", () => true);
+                RemotingEncoder.AddNoteProperty(psObject, "SerializeExtent", static () => true);
             }
             else
             {
-                RemotingEncoder.AddNoteProperty(psObject, "SerializeExtent", () => false);
+                RemotingEncoder.AddNoteProperty(psObject, "SerializeExtent", static () => false);
             }
 
             RemoteCommandInfo.ToPSObjectForRemoting(this.MyCommand, psObject);

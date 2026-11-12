@@ -88,7 +88,7 @@ namespace Microsoft.Management.Infrastructure.CimCmdlets
         /// <returns></returns>
         internal static IEnumerable<string> GetComputerNames(IEnumerable<string> computerNames)
         {
-            return (computerNames == null) ? NullComputerNames : computerNames;
+            return computerNames ?? NullComputerNames;
         }
 
         /// <summary>
@@ -110,7 +110,7 @@ namespace Microsoft.Management.Infrastructure.CimCmdlets
         /// <returns></returns>
         internal static string GetNamespace(string nameSpace)
         {
-            return (nameSpace == null) ? DefaultNameSpace : nameSpace;
+            return nameSpace ?? DefaultNameSpace;
         }
 
         /// <summary>
@@ -122,7 +122,7 @@ namespace Microsoft.Management.Infrastructure.CimCmdlets
         /// <returns></returns>
         internal static string GetQueryDialectWithDefault(string queryDialect)
         {
-            return (queryDialect == null) ? DefaultQueryDialect : queryDialect;
+            return queryDialect ?? DefaultQueryDialect;
         }
     }
 
@@ -199,18 +199,8 @@ namespace Microsoft.Management.Infrastructure.CimCmdlets
         {
             StackTrace trace = new();
             StackFrame frame = trace.GetFrame(depth);
-            // if (withFileName)
-            // {
-            //    return string.Format(CultureInfo.CurrentUICulture, "{0}#{1}:{2}:", frame.GetFileName()., frame.GetFileLineNumber(), frame.GetMethod().Name);
-            // }
-            // else
-            // {
-            //    return string.Format(CultureInfo.CurrentUICulture, "{0}:", frame.GetMethod());
-            // }
 
-            return string.Format(CultureInfo.CurrentUICulture, "{0}::{1}        ",
-                frame.GetMethod().DeclaringType.Name,
-                frame.GetMethod().Name);
+            return string.Create(CultureInfo.CurrentUICulture, $"{frame.GetMethod().DeclaringType.Name}::{frame.GetMethod().Name}        ");
         }
         #endregion
 
@@ -371,10 +361,7 @@ namespace Microsoft.Management.Infrastructure.CimCmdlets
         /// <param name="argumentName"></param>
         public static void ValidateNoNullArgument(object obj, string argumentName)
         {
-            if (obj == null)
-            {
-                throw new ArgumentNullException(argumentName);
-            }
+            ArgumentNullException.ThrowIfNull(obj, argumentName);
         }
 
         /// <summary>

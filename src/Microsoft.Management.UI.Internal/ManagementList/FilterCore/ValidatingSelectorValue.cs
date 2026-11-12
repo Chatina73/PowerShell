@@ -15,10 +15,40 @@ namespace Microsoft.Management.UI.Internal
     /// <typeparam name="T">
     /// The generic parameter.
     /// </typeparam>
-    [Serializable]
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.MSInternal", "CA903:InternalNamespaceShouldNotContainPublicTypes")]
     public class ValidatingSelectorValue<T> : ValidatingValueBase
     {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ValidatingSelectorValue{T}"/> class.
+        /// </summary>
+        public ValidatingSelectorValue()
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ValidatingSelectorValue{T}"/> class.
+        /// </summary>
+        /// <param name="source">The source to initialize from.</param>
+        public ValidatingSelectorValue(ValidatingSelectorValue<T> source)
+            : base(source)
+        {
+            availableValues.EnsureCapacity(source.availableValues.Count);
+            if (typeof(IDeepCloneable).IsAssignableFrom(typeof(T)))
+            {
+                foreach (var value in source.availableValues)
+                {
+                    availableValues.Add((T)((IDeepCloneable)value).DeepClone());
+                }
+            }
+            else
+            {
+                availableValues.AddRange(source.availableValues);
+            }
+
+            selectedIndex = source.selectedIndex;
+            displayNameConverter = source.displayNameConverter;
+        }
+
         #region Properties
 
         #region Consts
@@ -130,11 +160,6 @@ namespace Microsoft.Management.UI.Internal
 
             set
             {
-                if (value != null && !value.GetType().IsSerializable)
-                {
-                    throw new ArgumentException("The DisplayNameConverter must be serializable.", "value");
-                }
-
                 this.displayNameConverter = value;
             }
         }
@@ -148,12 +173,17 @@ namespace Microsoft.Management.UI.Internal
         /// <summary>
         /// Notifies listeners that the selected value has changed.
         /// </summary>
-        [field: NonSerialized]
         public event EventHandler<PropertyChangedEventArgs<T>> SelectedValueChanged;
 
         #endregion Events
 
         #region Public Methods
+
+        /// <inheritdoc cref="IDeepCloneable.DeepClone()" />
+        public override object DeepClone()
+        {
+            return new ValidatingSelectorValue<T>(this);
+        }
 
         #region Validate
 
@@ -187,7 +217,7 @@ namespace Microsoft.Management.UI.Internal
         {
             if (!columnName.Equals(SelectedIndexPropertyName, StringComparison.CurrentCulture))
             {
-                throw new ArgumentException(string.Format(CultureInfo.CurrentCulture, "{0} is not a valid column name.", columnName), "columnName");
+                throw new ArgumentException(string.Create(CultureInfo.CurrentCulture, $"{columnName} is not a valid column name."), "columnName");
             }
 
             if (!this.IsIndexWithinBounds(this.SelectedIndex))

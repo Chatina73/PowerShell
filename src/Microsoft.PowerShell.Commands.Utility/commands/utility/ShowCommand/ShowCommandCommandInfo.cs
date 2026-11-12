@@ -22,10 +22,7 @@ namespace Microsoft.PowerShell.Commands.ShowCommandExtension
         /// </param>
         public ShowCommandCommandInfo(CommandInfo other)
         {
-            if (other == null)
-            {
-                throw new ArgumentNullException(nameof(other));
-            }
+            ArgumentNullException.ThrowIfNull(other);
 
             this.Name = other.Name;
             this.ModuleName = other.ModuleName;
@@ -39,7 +36,7 @@ namespace Microsoft.PowerShell.Commands.ShowCommandExtension
             {
                 this.ParameterSets =
                     other.ParameterSets
-                        .Select(x => new ShowCommandParameterSetInfo(x))
+                        .Select(static x => new ShowCommandParameterSetInfo(x))
                         .ToList()
                         .AsReadOnly();
             }
@@ -71,10 +68,7 @@ namespace Microsoft.PowerShell.Commands.ShowCommandExtension
         /// </param>
         public ShowCommandCommandInfo(PSObject other)
         {
-            if (other == null)
-            {
-                throw new ArgumentNullException(nameof(other));
-            }
+            ArgumentNullException.ThrowIfNull(other);
 
             this.Name = other.Members["Name"].Value as string;
             this.ModuleName = other.Members["ModuleName"].Value as string;
@@ -92,7 +86,7 @@ namespace Microsoft.PowerShell.Commands.ShowCommandExtension
                 this.CommandType = (CommandTypes)((other.Members["CommandType"].Value as PSObject).BaseObject);
 
                 var parameterSets = (other.Members["ParameterSets"].Value as PSObject).BaseObject as System.Collections.ArrayList;
-                this.ParameterSets = GetObjectEnumerable(parameterSets).Cast<PSObject>().Select(x => new ShowCommandParameterSetInfo(x)).ToList().AsReadOnly();
+                this.ParameterSets = GetObjectEnumerable(parameterSets).Cast<PSObject>().Select(static x => new ShowCommandParameterSetInfo(x)).ToList().AsReadOnly();
 
                 if (other.Members["Module"]?.Value is PSObject)
                 {

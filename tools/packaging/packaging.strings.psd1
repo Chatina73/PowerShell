@@ -11,6 +11,14 @@ if [ ! -f /etc/shells ] ; then
 else
     grep -q "^{0}$" /etc/shells || echo "{0}" >> /etc/shells
 fi
+if [ -f /lib64/libssl.so.1.1 ] ; then
+    ln -f -s /lib64/libssl.so.1.1 {1}/libssl.so.1.0.0
+    ln -f -s /lib64/libcrypto.so.1.1.1 {1}/libcrypto.so.1.0.0
+else
+    ln -f -s /lib64/libssl.so.10 {1}/libssl.so.1.0.0
+    ln -f -s /lib64/libcrypto.so.10 {1}/libcrypto.so.1.0.0
+fi
+
 '@
 
     RedHatAfterRemoveScript = @'
@@ -20,6 +28,8 @@ if [ "$1" = 0 ] ; then
         grep -v '^{0}$' /etc/shells > $TmpFile
         cp -f $TmpFile /etc/shells
         rm -f $TmpFile
+        rm -f {1}/libssl.so.1.0.0
+        rm -f {1}/libcrypto.so.1.0.0
     fi
 fi
 '@
@@ -38,6 +48,18 @@ case "$1" in
         exit 0
     ;;
 esac
+
+if [ -f /usr/lib/x86_64-linux-gnu/libssl.so.1.1 ] ; then
+    ln -f -s /usr/lib/x86_64-linux-gnu/libssl.so.1.1 {1}/libssl.so.1.0.0
+    ln -f -s /usr/lib/x86_64-linux-gnu/libcrypto.so.1.1 {1}/libcrypto.so.1.0.0
+elif [ -f /usr/lib/x86_64-linux-gnu/libssl.so.1.0.2 ] ; then
+    ln -f -s /usr/lib/x86_64-linux-gnu/libssl.so.1.0.2 {1}/libssl.so.1.0.0
+    ln -f -s /usr/lib/x86_64-linux-gnu/libcrypto.so.1.0.2 {1}/libcrypto.so.1.0.0
+else
+    ln -f -s /lib64/libssl.so.10 {1}/libssl.so.1.0.0
+    ln -f -s /lib64/libcrypto.so.10 {1}/libcrypto.so.1.0.0
+fi
+
 '@
 
     UbuntuAfterRemoveScript = @'
@@ -46,6 +68,8 @@ set -e
 case "$1" in
         (remove)
         remove-shell "{0}"
+        rm -f {1}/libssl.so.1.0.0
+        rm -f {1}/libcrypto.so.1.0.0
         ;;
 esac
 '@
@@ -101,7 +125,7 @@ open {0}
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <installer-gui-script minSpecVersion="1">
     <title>{0}</title>
-    <options hostArchitectures="x86_64"/>
+    <options hostArchitectures="{5}"/>
     <options customize="never" rootVolumeOnly="true"/>
     <background file="macDialog.png" scaling="tofit" alignment="bottomleft"/>
     <allowed-os-versions>
@@ -142,20 +166,10 @@ open {0}
             <files include="**/*" buildAction="None" copyToOutput="true" flatten="false" />
         </contentFiles>
         <dependencies>
-            <group targetFramework="net6.0"></group>
+            <group targetFramework="net11.0"></group>
         </dependencies>
     </metadata>
 </package>
-'@
-
-    NuGetConfigFile = @'
-<configuration>
-  <packageSources>
-    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-    <add key="dotnet-core" value="https://dotnet.myget.org/F/dotnet-core/api/v3/index.json" />
-    <add key="powershell-core" value="https://powershell.myget.org/F/powershell-core/api/v3/index.json" />
-  </packageSources>
-</configuration>
 '@
 
     GlobalToolNuSpec = @'
@@ -181,12 +195,82 @@ open {0}
 </package>
 '@
 
+    WindowsX64GlobalToolNuspec = @'
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+    <metadata>
+        <id>PowerShelll.Windows.x64</id>
+        <version>{0}</version>
+        <authors>Microsoft</authors>
+        <owners>Microsoft,PowerShell</owners>
+        <projectUrl>https://github.com/PowerShell/PowerShell</projectUrl>
+        <icon>Powershell_64.png</icon>
+        <requireLicenseAcceptance>false</requireLicenseAcceptance>
+        <description>PowerShell global tool</description>
+        <license type="expression">MIT</license>
+        <tags>PowerShell</tags>
+        <language>en-US</language>
+        <copyright>&#169; Microsoft Corporation. All rights reserved.</copyright>
+        <packageTypes>
+            <packageType name="DotnetTool" />
+        </packageTypes>
+    </metadata>
+</package>
+'@
+
     GlobalToolSettingsFile = @'
 <?xml version="1.0" encoding="utf-8"?>
 <DotNetCliTool Version="1">
     <Commands>
         <Command Name="pwsh" EntryPoint="{0}" Runner="dotnet" />
     </Commands>
+</DotNetCliTool>
+'@
+
+    # RID-agnostic pointer package nuspec for the RID-specific 'PowerShell' global tool.
+    # {0} = package id ("PowerShell"), {1} = package version, {2} = icon file name.
+    # This replaces the shim-based "Unified" package: 'dotnet tool install' resolves the
+    # correct RID-specific sub-package listed in DotnetToolSettings.xml (see
+    # GlobalToolPointerSettingsFile below) instead of downloading every platform's payload
+    # and picking one at run time via Microsoft.PowerShell.GlobalTool.Shim.
+    GlobalToolPointerNuSpec = @'
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+    <metadata>
+        <id>{0}</id>
+        <version>{1}</version>
+        <authors>Microsoft</authors>
+        <owners>Microsoft,PowerShell</owners>
+        <projectUrl>https://github.com/PowerShell/PowerShell</projectUrl>
+        <icon>{2}</icon>
+        <requireLicenseAcceptance>false</requireLicenseAcceptance>
+        <description>PowerShell global tool</description>
+        <license type="expression">MIT</license>
+        <tags>PowerShell</tags>
+        <language>en-US</language>
+        <copyright>&#169; Microsoft Corporation. All rights reserved.</copyright>
+        <packageTypes>
+            <packageType name="DotnetTool" />
+        </packageTypes>
+    </metadata>
+</package>
+'@
+
+    # DotNetCliTool schema version 2: maps each supported RID to its sub-package id.
+    # NOTE: the RID-specific sub-packages themselves (e.g. "PowerShell.win-x64") are produced
+    # directly by 'dotnet pack -r <rid> --no-build' against src/GlobalTools/PowerShell, which
+    # generates its own nuspec/DotnetToolSettings.xml (with a native apphost "Runner=executable"
+    # entry point) -- they are not hand-authored here.
+    # {0} = XML fragment of <RuntimeIdentifierPackage .../> elements, one per supported RID.
+    GlobalToolPointerSettingsFile = @'
+<?xml version="1.0" encoding="utf-8"?>
+<DotNetCliTool Version="2">
+    <Commands>
+        <Command Name="pwsh" />
+    </Commands>
+    <RuntimeIdentifierPackages>
+{0}
+    </RuntimeIdentifierPackages>
 </DotNetCliTool>
 '@
 

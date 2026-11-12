@@ -2,6 +2,18 @@
 # Licensed under the MIT License.
 
 Describe "Hidden properties should not be returned by the 'FirstOrDefault' primitive" -Tag CI {
+    BeforeAll {
+        if ($null -ne $PSStyle) {
+            $outputRendering = $PSStyle.OutputRendering
+            $PSStyle.OutputRendering = 'plaintext'
+        }
+    }
+
+    AfterAll {
+        if ($null -ne $PSStyle) {
+            $PSStyle.OutputRendering = $outputRendering
+        }
+    }
 
     It "Formatting for an object with no property/field should use 'ToString'" {
         class Empty {
@@ -49,5 +61,19 @@ Describe "Hidden properties should not be returned by the 'FirstOrDefault' primi
 
         $outstring = [Params2]::new() | Out-String
         $outstring.Trim() | Should -BeExactly "Param$([System.Environment]::NewLine)-----$([System.Environment]::NewLine)Foo"
+    }
+}
+
+Describe "'Format-Table/List/Custom -Property' should not throw NullRef exception" -Tag CI {
+
+    It "'<Command> -Property' requires value to be not null and not empty" -TestCases @(
+        @{ Command = "Format-Table"; NameInErrorId = "FormatTableCommand" }
+        @{ Command = "Format-List"; NameInErrorId = "FormatListCommand" }
+        @{ Command = "Format-Custom"; NameInErrorId = "FormatCustomCommand" }
+    ) {
+        param($Command, $NameInErrorId)
+
+        { Get-Process -Id $PID | & $Command -Property @() } | Should -Throw -ErrorId "ParameterArgumentValidationError,Microsoft.PowerShell.Commands.$NameInErrorId"
+        { Get-Process -Id $PID | & $Command -Property $null } | Should -Throw -ErrorId "ParameterArgumentValidationError,Microsoft.PowerShell.Commands.$NameInErrorId"
     }
 }

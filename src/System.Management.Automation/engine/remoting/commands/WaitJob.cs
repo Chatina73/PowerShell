@@ -46,7 +46,7 @@ namespace Microsoft.PowerShell.Commands
         /// </summary>
         [Parameter]
         [Alias("TimeoutSec")]
-        [ValidateRangeAttribute(-1, Int32.MaxValue)]
+        [ValidateRange(-1, int.MaxValue)]
         public int Timeout
         {
             get
@@ -244,7 +244,7 @@ namespace Microsoft.PowerShell.Commands
         {
             lock (_jobTrackingLock)
             {
-                return _jobsToWaitFor.Find(j => j.JobStateInfo.State == JobState.Blocked);
+                return _jobsToWaitFor.Find(static j => j.JobStateInfo.State == JobState.Blocked);
             }
         }
 

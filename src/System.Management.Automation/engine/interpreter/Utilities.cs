@@ -147,7 +147,7 @@ namespace System.Management.Automation.Interpreter
 
             // Can only used predefined delegates if we have no byref types and
             // the arity is small enough to fit in Func<...> or Action<...>
-            if (types.Length > MaximumArity || types.Any(t => t.IsByRef))
+            if (types.Length > MaximumArity || types.Any(static t => t.IsByRef))
             {
                 throw Assert.Unreachable;
                 // return MakeCustomDelegate(types);
@@ -1078,7 +1078,10 @@ namespace System.Management.Automation.Interpreter
 
             foreach (T item in collection)
             {
-                if (!predicate(item)) return false;
+                if (!predicate(item))
+                {
+                    return false;
+                }
             }
 
             return true;

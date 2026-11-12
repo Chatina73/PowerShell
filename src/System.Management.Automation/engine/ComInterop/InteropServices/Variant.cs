@@ -276,9 +276,6 @@ namespace System.Management.Automation.InteropServices
             }
         }
 
-        [DllImport("oleaut32.dll")]
-        internal static extern void VariantClear(IntPtr variant);
-
         /// <summary>
         /// Release any unmanaged memory associated with the Variant
         /// </summary>
@@ -306,7 +303,7 @@ namespace System.Management.Automation.InteropServices
                 {
                     fixed (void* pThis = &this)
                     {
-                        VariantClear((IntPtr)pThis);
+                        Interop.Windows.VariantClear((nint)pThis);
                     }
                 }
 
@@ -343,6 +340,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_I1);
                 return _typeUnion._unionTypes._i1;
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -360,6 +358,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_I2);
                 return _typeUnion._unionTypes._i2;
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -377,6 +376,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_I4);
                 return _typeUnion._unionTypes._i4;
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -394,6 +394,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_I8);
                 return _typeUnion._unionTypes._i8;
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -411,6 +412,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_UI1);
                 return _typeUnion._unionTypes._ui1;
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -428,6 +430,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_UI2);
                 return _typeUnion._unionTypes._ui2;
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -445,6 +448,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_UI4);
                 return _typeUnion._unionTypes._ui4;
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -462,6 +466,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_UI8);
                 return _typeUnion._unionTypes._ui8;
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -479,6 +484,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_INT);
                 return _typeUnion._unionTypes._int;
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -496,6 +502,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_UINT);
                 return _typeUnion._unionTypes._uint;
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -513,6 +520,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_BOOL);
                 return _typeUnion._unionTypes._bool != 0;
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -532,6 +540,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_ERROR);
                 return _typeUnion._unionTypes._error;
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -549,6 +558,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_R4);
                 return _typeUnion._unionTypes._r4;
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -566,6 +576,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_R8);
                 return _typeUnion._unionTypes._r8;
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -586,6 +597,7 @@ namespace System.Management.Automation.InteropServices
                 v._typeUnion._vt = 0;
                 return v._decimal;
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -605,6 +617,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_CY);
                 return decimal.FromOACurrency(_typeUnion._unionTypes._cy);
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -622,6 +635,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_DATE);
                 return DateTime.FromOADate(_typeUnion._unionTypes._date);
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -639,6 +653,7 @@ namespace System.Management.Automation.InteropServices
                 Debug.Assert(VariantType == VarEnum.VT_BSTR);
                 return (string)Marshal.PtrToStringBSTR(this._typeUnion._unionTypes._bstr);
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -660,6 +675,7 @@ namespace System.Management.Automation.InteropServices
                 }
                 return Marshal.GetObjectForIUnknown(_typeUnion._unionTypes._unknown);
             }
+
             set
             {
                 Debug.Assert(IsEmpty);
@@ -688,6 +704,7 @@ namespace System.Management.Automation.InteropServices
                 }
                 return Marshal.GetObjectForIUnknown(_typeUnion._unionTypes._dispatch);
             }
+
             set
             {
                 Debug.Assert(IsEmpty);

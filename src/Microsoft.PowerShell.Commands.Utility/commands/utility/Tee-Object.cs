@@ -3,6 +3,7 @@
 
 using System;
 using System.Management.Automation;
+using System.Text;
 
 using Microsoft.PowerShell.Commands.Internal.Format;
 
@@ -73,6 +74,16 @@ namespace Microsoft.PowerShell.Commands
         private bool _append;
 
         /// <summary>
+        /// Gets or sets the Encoding.
+        /// </summary>
+        [Parameter(ParameterSetName = "File")]
+        [Parameter(ParameterSetName = "LiteralFile")]
+        [ArgumentToEncodingTransformation]
+        [ArgumentEncodingCompletions]
+        [ValidateNotNullOrEmpty]
+        public Encoding Encoding { get; set; } = Encoding.Default;
+
+        /// <summary>
         /// Variable parameter.
         /// </summary>
         [Parameter(Mandatory = true, ParameterSetName = "Variable")]
@@ -95,12 +106,14 @@ namespace Microsoft.PowerShell.Commands
                 _commandWrapper.Initialize(Context, "out-file", typeof(OutFileCommand));
                 _commandWrapper.AddNamedParameter("filepath", _fileName);
                 _commandWrapper.AddNamedParameter("append", _append);
+                _commandWrapper.AddNamedParameter("encoding", Encoding);
             }
             else if (string.Equals(ParameterSetName, "LiteralFile", StringComparison.OrdinalIgnoreCase))
             {
                 _commandWrapper.Initialize(Context, "out-file", typeof(OutFileCommand));
                 _commandWrapper.AddNamedParameter("LiteralPath", _fileName);
                 _commandWrapper.AddNamedParameter("append", _append);
+                _commandWrapper.AddNamedParameter("encoding", Encoding);
             }
             else
             {
@@ -127,26 +140,20 @@ namespace Microsoft.PowerShell.Commands
             _commandWrapper.ShutDown();
         }
 
-        private void Dispose(bool isDisposing)
+        /// <summary>
+        /// Release all resources.
+        /// </summary>
+        public void Dispose()
         {
             if (!_alreadyDisposed)
             {
                 _alreadyDisposed = true;
-                if (isDisposing && _commandWrapper != null)
+                if (_commandWrapper != null)
                 {
                     _commandWrapper.Dispose();
                     _commandWrapper = null;
                 }
             }
-        }
-
-        /// <summary>
-        /// Dispose method in IDisposable.
-        /// </summary>
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
         }
 
         #region private

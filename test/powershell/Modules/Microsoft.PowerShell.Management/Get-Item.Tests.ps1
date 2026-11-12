@@ -111,7 +111,7 @@ Describe "Get-Item" -Tags "CI" {
             {
                 return
             }
-            $altStreamPath = "$TESTDRIVE/altStream.txt"
+            $altStreamPath = "$TESTDRIVE\altStream.txt"
             $altStreamDirectory = "$TESTDRIVE/altstreamdir"
             $noAltStreamDirectory = "$TESTDRIVE/noaltstreamdir"
             $stringData = "test data"
@@ -143,6 +143,10 @@ Describe "Get-Item" -Tags "CI" {
         It "Should find zero alt streams and not fail on a directory with a wildcard stream name if no alt streams are present" -Skip:$skipNotWindows {
             $result = Get-Item $noAltStreamDirectory -Stream * -ErrorAction Stop
             $result | Should -BeExactly $null
+        }
+        It "Should return filename property correctly" -Skip:$skipNotWindows {
+            $result = (Get-Item -Path $altStreamPath -Stream $streamName).FileName
+            $result | Should -BeExactly $altStreamPath
         }
     }
 
@@ -191,17 +195,80 @@ Describe "Get-Item environment provider on Windows with accidental case-variant 
         if (-not (Get-Command -ErrorAction Ignore node.exe)) {
             Write-Warning "Test skipped, because prerequisite Node.js is not installed."
         } else {
-            $valDirect, $valGetItem, $unused = node.exe -pe @"
+            $fso = New-Object -ComObject Scripting.FileSystemObject
+            $shortPath = $fso.GetFile("$PSHOME\pwsh.exe").ShortPath.Replace('\', '/')
+            $script = @"
                 env = {}
                 env.testVar = process.env.testVar // include the original case variant with its original value.
                 env.TESTVAR = 'b' // redefine with a case variant name and different value
                 // Note: Which value will win is not deterministic(!); what matters, however, is that both
-                //       $env:testvar and Get-Item env:testvar report the same value.
+                //       `$env:testvar and Get-Item env:testvar report the same value.
                 //       The nondeterministic behavior makes it hard to prove that the values are *always* the
                 //       same, however.
-                require('child_process').execSync(\"\\\"$($PSHOME -replace '\\', '/')/pwsh.exe\\\" -noprofile -command `$env:testvar, (Get-Item env:testvar).Value\", { env: env }).toString()
+                require('child_process').execSync('$shortPath -noprofile -command `$env:testvar, (Get-Item env:testvar).Value', { env: env }).toString()
 "@
+            $valDirect, $valGetItem, $unused = node.exe -pe $script
+            $LASTEXITCODE | Should -Be 0
+            $valDirect | Should -Not -BeNullOrEmpty
             $valGetItem | Should -BeExactly $valDirect
         }
+    }
+}
+
+Describe 'Formatting for FileInfo objects' -Tags 'CI' {
+    BeforeAll {
+        $extensionTests = [System.Collections.Generic.List[HashTable]]::new()
+        foreach ($extension in @('.zip', '.tgz', '.tar', '.gz', '.nupkg', '.cab', '.7z', '.ps1', '.psd1', '.psm1', '.ps1xml')) {
+            $extensionTests.Add(@{extension = $extension})
+        }
+    }
+
+    It 'File type <extension> should have correct color' -TestCases $extensionTests {
+        param($extension)
+
+        $testFile = Join-Path -Path $TestDrive -ChildPath "test$extension"
+        $file = New-Item -ItemType File -Path $testFile
+        $file.NameString | Should -BeExactly "$($PSStyle.FileInfo.Extension[$extension] + $file.Name + $PSStyle.Reset)"
+    }
+
+    It 'Directory should have correct color' {
+        $dirPath = Join-Path -Path $TestDrive -ChildPath 'myDir'
+        $dir = New-Item -ItemType Directory -Path $dirPath
+        $dir.NameString | Should -BeExactly "$($PSStyle.FileInfo.Directory + $dir.Name + $PSStyle.Reset)"
+    }
+
+    It 'NameString should not query link metadata for a cached non-reparse point' -Skip:(-not $IsWindows) {
+        $testFile = Join-Path -Path $TestDrive -ChildPath 'cached-metadata'
+        $file = New-Item -ItemType File -Path $testFile
+        $null = $file.Attributes
+
+        # Removing the file makes an unnecessary second filesystem query observable.
+        [System.IO.File]::Delete($testFile)
+
+        # Without the cached-attributes check, NameString queries the deleted path for link metadata and throws.
+        [Microsoft.PowerShell.Commands.FileSystemProvider]::NameString($file) | Should -BeExactly $file.Name
+    }
+
+    It 'Executable should have correct color' {
+        if ($IsWindows) {
+            $exePath = Join-Path -Path $TestDrive -ChildPath 'myExe.exe'
+            $exe = New-Item -ItemType File -Path $exePath
+        }
+        else {
+            $exePath = Join-Path -Path $TestDrive -ChildPath 'myExe'
+            $null = New-Item -ItemType File -Path $exePath
+            chmod +x $exePath
+            $exe = Get-Item -Path $exePath
+        }
+
+        $exe.NameString | Should -BeExactly "$($PSStyle.FileInfo.Executable + $exe.Name + $PSStyle.Reset)"
+    }
+}
+
+Describe 'Formatting for FileInfo requiring admin' -Tags 'CI','RequireAdminOnWindows' {
+    It 'Symlink should have correct color' {
+        $linkPath = Join-Path -Path $TestDrive -ChildPath 'link'
+        $link = New-Item -ItemType SymbolicLink -Name 'link' -Value $TestDrive -Path $TestDrive
+        $link.NameString | Should -BeExactly "$($PSStyle.FileInfo.SymbolicLink + $link.Name + $PSStyle.Reset) -> $TestDrive"
     }
 }

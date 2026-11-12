@@ -16,8 +16,7 @@ namespace Microsoft.PowerShell.Commands
         /// <summary>Breakpoint on a line within a script</summary>
         Line,
 
-        /// <summary>
-        /// Breakpoint on a variable</summary>
+        /// <summary>Breakpoint on a variable</summary>
         Variable,
 
         /// <summary>Breakpoint on a command</summary>
@@ -107,7 +106,7 @@ namespace Microsoft.PowerShell.Commands
                 breakpoints = Filter(
                     breakpoints,
                     Id,
-                    (Breakpoint breakpoint, int id) => breakpoint.Id == id);
+                    static (Breakpoint breakpoint, int id) => breakpoint.Id == id);
             }
             else if (ParameterSetName.Equals(CommandParameterSetName, StringComparison.OrdinalIgnoreCase))
             {
@@ -116,7 +115,7 @@ namespace Microsoft.PowerShell.Commands
                     Command,
                     (Breakpoint breakpoint, string command) =>
                     {
-                        if (!(breakpoint is CommandBreakpoint commandBreakpoint))
+                        if (breakpoint is not CommandBreakpoint commandBreakpoint)
                         {
                             return false;
                         }
@@ -131,7 +130,7 @@ namespace Microsoft.PowerShell.Commands
                     Variable,
                     (Breakpoint breakpoint, string variable) =>
                     {
-                        if (!(breakpoint is VariableBreakpoint variableBreakpoint))
+                        if (breakpoint is not VariableBreakpoint variableBreakpoint)
                         {
                             return false;
                         }

@@ -31,7 +31,6 @@ namespace System.Management.Automation
     /// Defines exception which is thrown when state of the PowerShell is different
     /// from the expected state.
     /// </summary>
-    [Serializable]
     public class InvalidPowerShellStateException : SystemException
     {
         /// <summary>
@@ -97,10 +96,11 @@ namespace System.Management.Automation
         /// The <see cref="StreamingContext"/> that contains contextual information
         /// about the source or destination.
         /// </param>
+        [Obsolete("Legacy serialization support is deprecated since .NET 8", DiagnosticId = "SYSLIB0051")]
         protected
         InvalidPowerShellStateException(SerializationInfo info, StreamingContext context)
-        : base(info, context)
         {
+            throw new NotSupportedException();
         }
 
         #endregion
@@ -762,10 +762,7 @@ namespace System.Management.Automation
 
             // create the client remote powershell for remoting
             // communications
-            if (RemotePowerShell == null)
-            {
-                RemotePowerShell = new ClientRemotePowerShell(this, ((RunspacePool)_rsConnection).RemoteRunspacePoolInternal);
-            }
+            RemotePowerShell ??= new ClientRemotePowerShell(this, ((RunspacePool)_rsConnection).RemoteRunspacePoolInternal);
 
             // If we get here, we don't call 'Invoke' or any of it's friends on 'this', instead we serialize 'this' in PowerShell.ToPSObjectForRemoting.
             // Without the following two steps, we'll be missing the 'ExtraCommands' on the serialized instance of 'this'.
@@ -804,10 +801,7 @@ namespace System.Management.Automation
 
             RedirectShellErrorOutputPipe = redirectShellErrorOutputPipe;
 
-            if (RemotePowerShell == null)
-            {
-                RemotePowerShell = new ClientRemotePowerShell(this, ((RunspacePool)_rsConnection).RemoteRunspacePoolInternal);
-            }
+            RemotePowerShell ??= new ClientRemotePowerShell(this, ((RunspacePool)_rsConnection).RemoteRunspacePoolInternal);
 
             if (!RemotePowerShell.Initialized)
             {
@@ -952,9 +946,11 @@ namespace System.Management.Automation
 
         /// <summary>
         /// Add a cmdlet to construct a command pipeline.
-        /// For example, to construct a command string "get-process | sort-object",
+        /// For example, to construct a command string "Get-Process | Sort-Object",
         ///     <code>
-        ///         PowerShell shell = PowerShell.Create("get-process").AddCommand("sort-object");
+        ///         PowerShell shell = PowerShell.Create()
+        ///             .AddCommand("Get-Process")
+        ///             .AddCommand("Sort-Object");
         ///     </code>
         /// </summary>
         /// <param name="cmdlet">
@@ -990,9 +986,11 @@ namespace System.Management.Automation
 
         /// <summary>
         /// Add a cmdlet to construct a command pipeline.
-        /// For example, to construct a command string "get-process | sort-object",
+        /// For example, to construct a command string "Get-Process | Sort-Object",
         ///     <code>
-        ///         PowerShell shell = PowerShell.Create("get-process").AddCommand("sort-object");
+        ///         PowerShell shell = PowerShell.Create()
+        ///             .AddCommand("Get-Process", true)
+        ///             .AddCommand("Sort-Object", true);
         ///     </code>
         /// </summary>
         /// <param name="cmdlet">
@@ -1031,10 +1029,10 @@ namespace System.Management.Automation
 
         /// <summary>
         /// Add a piece of script to construct a command pipeline.
-        /// For example, to construct a command string "get-process | foreach { $_.Name }"
+        /// For example, to construct a command string "Get-Process | ForEach-Object { $_.Name }"
         ///     <code>
-        ///         PowerShell shell = PowerShell.Create("get-process").
-        ///                                     AddCommand("foreach { $_.Name }", true);
+        ///         PowerShell shell = PowerShell.Create()
+        ///             .AddScript("Get-Process | ForEach-Object { $_.Name }");
         ///     </code>
         /// </summary>
         /// <param name="script">
@@ -1070,10 +1068,10 @@ namespace System.Management.Automation
 
         /// <summary>
         /// Add a piece of script to construct a command pipeline.
-        /// For example, to construct a command string "get-process | foreach { $_.Name }"
+        /// For example, to construct a command string "Get-Process | ForEach-Object { $_.Name }"
         ///     <code>
-        ///         PowerShell shell = PowerShell.Create("get-process").
-        ///                                     AddCommand("foreach { $_.Name }", true);
+        ///         PowerShell shell = PowerShell.Create()
+        ///             .AddScript("Get-Process | ForEach-Object { $_.Name }", true);
         ///     </code>
         /// </summary>
         /// <param name="script">
@@ -1179,10 +1177,11 @@ namespace System.Management.Automation
 
         /// <summary>
         /// Add a parameter to the last added command.
-        /// For example, to construct a command string "get-process | select-object -property name"
+        /// For example, to construct a command string "Get-Process | Select-Object -Property Name"
         ///     <code>
-        ///         PowerShell shell = PowerShell.Create("get-process").
-        ///                                     AddCommand("select-object").AddParameter("property","name");
+        ///         PowerShell shell = PowerShell.Create()
+        ///             .AddCommand("Get-Process")
+        ///             .AddCommand("Select-Object").AddParameter("Property", "Name");
         ///     </code>
         /// </summary>
         /// <param name="parameterName">
@@ -1370,7 +1369,7 @@ namespace System.Management.Automation
 
                 foreach (DictionaryEntry entry in parameters)
                 {
-                    if (!(entry.Key is string parameterName))
+                    if (entry.Key is not string parameterName)
                     {
                         throw PSTraceSource.NewArgumentException(nameof(parameters), PowerShellStrings.KeyMustBeString);
                     }
@@ -1384,10 +1383,11 @@ namespace System.Management.Automation
 
         /// <summary>
         /// Adds an argument to the last added command.
-        /// For example, to construct a command string "get-process | select-object name"
+        /// For example, to construct a command string "Get-Process | Select-Object Name"
         ///     <code>
-        ///         PowerShell shell = PowerShell.Create("get-process").
-        ///                                     AddCommand("select-object").AddParameter("name");
+        ///         PowerShell shell = PowerShell.Create()
+        ///             .AddCommand("Get-Process")
+        ///             .AddCommand("Select-Object").AddArgument("Name");
         ///     </code>
         /// This will add the value "name" to the positional parameter list of "select-object"
         /// cmdlet. When the command is invoked, this value will get bound to positional parameter 0
@@ -2236,10 +2236,7 @@ namespace System.Management.Automation
             {
                 if (addToHistory)
                 {
-                    if (settings == null)
-                    {
-                        settings = new PSInvocationSettings();
-                    }
+                    settings ??= new PSInvocationSettings();
 
                     settings.AddToHistory = true;
                 }
@@ -3079,6 +3076,10 @@ namespace System.Management.Automation
         /// <exception cref="ObjectDisposedException">
         /// Object is disposed.
         /// </exception>
+        /// <exception cref="System.Management.Automation.PipelineStoppedException">
+        /// The running PowerShell pipeline was stopped.
+        /// This occurs when <see cref="PowerShell.Stop"/> or <see cref="PowerShell.StopAsync(AsyncCallback, object)"/> is called.
+        /// </exception>
         public Task<PSDataCollection<PSObject>> InvokeAsync()
             => Task<PSDataCollection<PSObject>>.Factory.FromAsync(BeginInvoke(), _endInvokeMethod);
 
@@ -3119,6 +3120,10 @@ namespace System.Management.Automation
         /// </exception>
         /// <exception cref="ObjectDisposedException">
         /// Object is disposed.
+        /// </exception>
+        /// <exception cref="System.Management.Automation.PipelineStoppedException">
+        /// The running PowerShell pipeline was stopped.
+        /// This occurs when <see cref="PowerShell.Stop"/> or <see cref="PowerShell.StopAsync(AsyncCallback, object)"/> is called.
         /// </exception>
         public Task<PSDataCollection<PSObject>> InvokeAsync<T>(PSDataCollection<T> input)
             => Task<PSDataCollection<PSObject>>.Factory.FromAsync(BeginInvoke<T>(input), _endInvokeMethod);
@@ -3174,6 +3179,10 @@ namespace System.Management.Automation
         /// <exception cref="ObjectDisposedException">
         /// Object is disposed.
         /// </exception>
+        /// <exception cref="System.Management.Automation.PipelineStoppedException">
+        /// The running PowerShell pipeline was stopped.
+        /// This occurs when <see cref="PowerShell.Stop"/> or <see cref="PowerShell.StopAsync(AsyncCallback, object)"/> is called.
+        /// </exception>
         public Task<PSDataCollection<PSObject>> InvokeAsync<T>(PSDataCollection<T> input, PSInvocationSettings settings, AsyncCallback callback, object state)
             => Task<PSDataCollection<PSObject>>.Factory.FromAsync(BeginInvoke<T>(input, settings, callback, state), _endInvokeMethod);
 
@@ -3221,6 +3230,14 @@ namespace System.Management.Automation
         /// </exception>
         /// <exception cref="ObjectDisposedException">
         /// Object is disposed.
+        /// </exception>
+        /// <exception cref="System.Management.Automation.PipelineStoppedException">
+        /// The running PowerShell pipeline was stopped.
+        /// This occurs when <see cref="PowerShell.Stop"/> or <see cref="PowerShell.StopAsync(AsyncCallback, object)"/> is called.
+        /// To collect partial output in this scenario,
+        /// supply a <see cref="System.Management.Automation.PSDataCollection{T}" /> for the <paramref name="output"/> parameter,
+        /// and either add a handler for the <see cref="System.Management.Automation.PSDataCollection{T}.DataAdding"/> event
+        /// or catch the exception and enumerate the object supplied for <paramref name="output"/>.
         /// </exception>
         public Task<PSDataCollection<PSObject>> InvokeAsync<TInput, TOutput>(PSDataCollection<TInput> input, PSDataCollection<TOutput> output)
             => Task<PSDataCollection<PSObject>>.Factory.FromAsync(BeginInvoke<TInput, TOutput>(input, output), _endInvokeMethod);
@@ -3284,6 +3301,14 @@ namespace System.Management.Automation
         /// <exception cref="ObjectDisposedException">
         /// Object is disposed.
         /// </exception>
+        /// <exception cref="System.Management.Automation.PipelineStoppedException">
+        /// The running PowerShell pipeline was stopped.
+        /// This occurs when <see cref="PowerShell.Stop"/> or <see cref="PowerShell.StopAsync(AsyncCallback, object)"/> is called.
+        /// To collect partial output in this scenario,
+        /// supply a <see cref="System.Management.Automation.PSDataCollection{T}" /> for the <paramref name="output"/> parameter,
+        /// and either add a handler for the <see cref="System.Management.Automation.PSDataCollection{T}.DataAdding"/> event
+        /// or catch the exception and use object supplied for <paramref name="output"/>.
+        /// </exception>
         public Task<PSDataCollection<PSObject>> InvokeAsync<TInput, TOutput>(PSDataCollection<TInput> input, PSDataCollection<TOutput> output, PSInvocationSettings settings, AsyncCallback callback, object state)
             => Task<PSDataCollection<PSObject>>.Factory.FromAsync(BeginInvoke<TInput, TOutput>(input, output, settings, callback, state), _endInvokeMethod);
 
@@ -3323,7 +3348,7 @@ namespace System.Management.Automation
         /// </exception>
         private IAsyncResult BeginBatchInvoke<TInput, TOutput>(PSDataCollection<TInput> input, PSDataCollection<TOutput> output, PSInvocationSettings settings, AsyncCallback callback, object state)
         {
-            if (!((object)output is PSDataCollection<PSObject> asyncOutput))
+            if ((object)output is not PSDataCollection<PSObject> asyncOutput)
             {
                 throw PSTraceSource.NewInvalidOperationException();
             }
@@ -3493,9 +3518,7 @@ namespace System.Management.Automation
                 ActionPreference preference;
                 if (_batchInvocationSettings != null)
                 {
-                    preference = (_batchInvocationSettings.ErrorActionPreference.HasValue) ?
-                        _batchInvocationSettings.ErrorActionPreference.Value
-                        : ActionPreference.Continue;
+                    preference = _batchInvocationSettings.ErrorActionPreference ?? ActionPreference.Continue;
                 }
                 else
                 {
@@ -3518,10 +3541,7 @@ namespace System.Management.Automation
                         break;
                 }
 
-                if (objs == null)
-                {
-                    objs = _batchAsyncResult.Output;
-                }
+                objs ??= _batchAsyncResult.Output;
 
                 DoRemainingBatchCommands(objs);
             }
@@ -3655,6 +3675,14 @@ namespace System.Management.Automation
         /// asyncResult object was not created by calling BeginInvoke
         /// on this PowerShell instance.
         /// </exception>
+        /// <exception cref="System.Management.Automation.PipelineStoppedException">
+        /// The running PowerShell pipeline was stopped.
+        /// This occurs when <see cref="PowerShell.Stop"/> or <see cref="PowerShell.StopAsync(AsyncCallback, object)"/> is called.
+        /// To collect partial output in this scenario,
+        /// supply a <see cref="System.Management.Automation.PSDataCollection{T}" /> to <see cref="PowerShell.BeginInvoke"/> for the <paramref name="output"/> parameter
+        /// and either add a handler for the <see cref="System.Management.Automation.PSDataCollection{T}.DataAdding"/> event
+        /// or catch the exception and enumerate the object supplied.
+        /// </exception>
         public PSDataCollection<PSObject> EndInvoke(IAsyncResult asyncResult)
         {
             try
@@ -3706,6 +3734,10 @@ namespace System.Management.Automation
         /// <exception cref="ObjectDisposedException">
         /// Object is disposed.
         /// </exception>
+        /// <remarks>
+        /// When used with <see cref="PowerShell.Invoke()"/>, that call will return a partial result.
+        /// When used with <see cref="PowerShell.InvokeAsync"/>, that call will throw a <see cref="System.Management.Automation.PipelineStoppedException"/>.
+        /// </remarks>
         public void Stop()
         {
             try
@@ -3762,6 +3794,10 @@ namespace System.Management.Automation
         /// asyncResult object was not created by calling BeginStop
         /// on this PowerShell instance.
         /// </exception>
+        /// <remarks>
+        /// When used with <see cref="PowerShell.Invoke()"/>, that call will return a partial result.
+        /// When used with <see cref="PowerShell.InvokeAsync"/>, that call will throw a <see cref="System.Management.Automation.PipelineStoppedException"/>.
+        /// </remarks>
         public void EndStop(IAsyncResult asyncResult)
         {
             if (asyncResult == null)
@@ -3812,6 +3848,10 @@ namespace System.Management.Automation
         /// <exception cref="ObjectDisposedException">
         /// Object is disposed.
         /// </exception>
+        /// <remarks>
+        /// When used with <see cref="PowerShell.Invoke()"/>, that call will return a partial result.
+        /// When used with <see cref="PowerShell.InvokeAsync"/>, that call will throw a <see cref="System.Management.Automation.PipelineStoppedException"/>.
+        /// </remarks>
         public Task StopAsync(AsyncCallback callback, object state)
             => Task.Factory.FromAsync(BeginStop(callback, state), _endStopMethod);
 
@@ -3840,15 +3880,50 @@ namespace System.Management.Automation
         #region IDisposable Overrides
 
         /// <summary>
-        /// Dispose all managed resources. This will suppress finalizer on the object from getting called by
-        /// calling System.GC.SuppressFinalize(this).
+        /// Release all resources.
         /// </summary>
         public void Dispose()
         {
-            Dispose(true);
-            // To prevent derived types with finalizers from having to re-implement System.IDisposable to call it,
-            // unsealed types without finalizers should still call SuppressFinalize.
-            System.GC.SuppressFinalize(this);
+            lock (_syncObject)
+            {
+                // if already disposed return
+                if (_isDisposed)
+                {
+                    return;
+                }
+            }
+
+            // Stop the currently running command outside of the lock
+            if (InvocationStateInfo.State == PSInvocationState.Running ||
+                InvocationStateInfo.State == PSInvocationState.Stopping)
+            {
+                Stop();
+            }
+
+            lock (_syncObject)
+            {
+                _isDisposed = true;
+            }
+
+            if (OutputBuffer != null && OutputBufferOwner)
+            {
+                OutputBuffer.Dispose();
+            }
+
+            if (_errorBuffer != null && ErrorBufferOwner)
+            {
+                _errorBuffer.Dispose();
+            }
+
+            if (IsRunspaceOwner)
+            {
+                _runspace.Dispose();
+            }
+
+            RemotePowerShell?.Dispose();
+
+            _invokeAsyncResult = null;
+            _stopAsyncResult = null;
         }
 
         #endregion
@@ -4082,72 +4157,13 @@ namespace System.Management.Automation
         }
 
         /// <summary>
-        /// Release all the resources.
-        /// </summary>
-        /// <param name="disposing">
-        /// if true, release all the managed objects.
-        /// </param>
-        private void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                lock (_syncObject)
-                {
-                    // if already disposed return
-                    if (_isDisposed)
-                    {
-                        return;
-                    }
-                }
-
-                // Stop the currently running command outside of the lock
-                if (InvocationStateInfo.State == PSInvocationState.Running ||
-                    InvocationStateInfo.State == PSInvocationState.Stopping)
-                {
-                    Stop();
-                }
-
-                lock (_syncObject)
-                {
-                    _isDisposed = true;
-                }
-
-                if (OutputBuffer != null && OutputBufferOwner)
-                {
-                    OutputBuffer.Dispose();
-                }
-
-                if (_errorBuffer != null && ErrorBufferOwner)
-                {
-                    _errorBuffer.Dispose();
-                }
-
-                if (IsRunspaceOwner)
-                {
-                    _runspace.Dispose();
-                }
-
-                if (RemotePowerShell != null)
-                {
-                    RemotePowerShell.Dispose();
-                }
-
-                _invokeAsyncResult = null;
-                _stopAsyncResult = null;
-            }
-        }
-
-        /// <summary>
         /// Clear the internal elements.
         /// </summary>
         private void InternalClearSuppressExceptions()
         {
             lock (_syncObject)
             {
-                if (_worker != null)
-                {
-                    _worker.InternalClearSuppressExceptions();
-                }
+                _worker?.InternalClearSuppressExceptions();
             }
         }
 
@@ -4273,10 +4289,7 @@ namespace System.Management.Automation
                     {
                         if (RunningExtraCommands)
                         {
-                            if (tempInvokeAsyncResult != null)
-                            {
-                                tempInvokeAsyncResult.SetAsCompleted(InvocationStateInfo.Reason);
-                            }
+                            tempInvokeAsyncResult?.SetAsCompleted(InvocationStateInfo.Reason);
 
                             RaiseStateChangeEvent(InvocationStateInfo.Clone());
                         }
@@ -4284,16 +4297,10 @@ namespace System.Management.Automation
                         {
                             RaiseStateChangeEvent(InvocationStateInfo.Clone());
 
-                            if (tempInvokeAsyncResult != null)
-                            {
-                                tempInvokeAsyncResult.SetAsCompleted(InvocationStateInfo.Reason);
-                            }
+                            tempInvokeAsyncResult?.SetAsCompleted(InvocationStateInfo.Reason);
                         }
 
-                        if (tempStopAsyncResult != null)
-                        {
-                            tempStopAsyncResult.SetAsCompleted(null);
-                        }
+                        tempStopAsyncResult?.SetAsCompleted(null);
                     }
                     catch (Exception)
                     {
@@ -4305,7 +4312,7 @@ namespace System.Management.Automation
                     }
                     finally
                     {
-                        // takes care exception occured with invokeAsyncResult
+                        // takes care exception occurred with invokeAsyncResult
                         if (isExceptionOccured && (tempStopAsyncResult != null))
                         {
                             tempStopAsyncResult.Release();
@@ -4332,10 +4339,7 @@ namespace System.Management.Automation
                         // This object can be disconnected even if "BeginStop" was called if it is a remote object
                         // and robust connections is retrying a failed network connection.
                         // In this case release the stop wait handle to prevent not responding.
-                        if (tempStopAsyncResult != null)
-                        {
-                            tempStopAsyncResult.SetAsCompleted(null);
-                        }
+                        tempStopAsyncResult?.SetAsCompleted(null);
 
                         // Only raise the Disconnected state changed event if the PowerShell state
                         // actually transitions to Disconnected from some other state.  This condition
@@ -4356,7 +4360,7 @@ namespace System.Management.Automation
                     }
                     finally
                     {
-                        // takes care exception occured with invokeAsyncResult
+                        // takes care exception occurred with invokeAsyncResult
                         if (isExceptionOccured && (tempStopAsyncResult != null))
                         {
                             tempStopAsyncResult.Release();
@@ -4401,10 +4405,7 @@ namespace System.Management.Automation
         {
             lock (_syncObject)
             {
-                if (RemotePowerShell != null)
-                {
-                    RemotePowerShell.Clear();
-                }
+                RemotePowerShell?.Clear();
             }
         }
 
@@ -5118,11 +5119,8 @@ namespace System.Management.Automation
             // cannot complete with this object.
             if (isDisconnected)
             {
-                if (_invokeAsyncResult != null)
-                {
-                    // Since object is stopped, allow result wait to end.
-                    _invokeAsyncResult.SetAsCompleted(null);
-                }
+                // Since object is stopped, allow result wait to end.
+                _invokeAsyncResult?.SetAsCompleted(null);
 
                 _stopAsyncResult.SetAsCompleted(null);
 
@@ -5183,10 +5181,7 @@ namespace System.Management.Automation
         private void ReleaseDebugger()
         {
             LocalRunspace localRunspace = _runspace as LocalRunspace;
-            if (localRunspace != null)
-            {
-                localRunspace.ReleaseDebugger();
-            }
+            localRunspace?.ReleaseDebugger();
         }
 
         /// <summary>
@@ -5258,7 +5253,7 @@ namespace System.Management.Automation
             if (_runspace != null)
             {
                 return _runspace.RunspaceStateInfo.State != RunspaceState.BeforeOpen &&
-                       _runspace.GetRemoteProtocolVersion() >= RemotingConstants.ProtocolVersionWin8RTM;
+                       _runspace.GetRemoteProtocolVersion() >= RemotingConstants.ProtocolVersion_2_2;
             }
 
             RemoteRunspacePoolInternal remoteRunspacePoolInternal = null;
@@ -5272,7 +5267,7 @@ namespace System.Management.Automation
             }
 
             return remoteRunspacePoolInternal != null &&
-                   remoteRunspacePoolInternal.PSRemotingProtocolVersion >= RemotingConstants.ProtocolVersionWin8RTM;
+                   remoteRunspacePoolInternal.PSRemotingProtocolVersion >= RemotingConstants.ProtocolVersion_2_2;
         }
 
         /// <summary>
@@ -5287,10 +5282,7 @@ namespace System.Management.Automation
             else
             {
                 RemoteRunspacePoolInternal remoteRunspacePoolInternal = GetRemoteRunspacePoolInternal();
-                if (remoteRunspacePoolInternal != null)
-                {
-                    remoteRunspacePoolInternal.PushRunningPowerShell(this);
-                }
+                remoteRunspacePoolInternal?.PushRunningPowerShell(this);
             }
         }
 
@@ -5306,10 +5298,7 @@ namespace System.Management.Automation
             else
             {
                 RemoteRunspacePoolInternal remoteRunspacePoolInternal = GetRemoteRunspacePoolInternal();
-                if (remoteRunspacePoolInternal != null)
-                {
-                    remoteRunspacePoolInternal.PopRunningPowerShell();
-                }
+                remoteRunspacePoolInternal?.PopRunningPowerShell();
             }
         }
 
@@ -5678,10 +5667,7 @@ namespace System.Management.Automation
                     else
                     {
                         RunspacePool pool = _shell._rsConnection as RunspacePool;
-                        if (pool != null)
-                        {
-                            pool.ReleaseRunspace(CurrentlyRunningPipeline.Runspace);
-                        }
+                        pool?.ReleaseRunspace(CurrentlyRunningPipeline.Runspace);
                     }
 
                     CurrentlyRunningPipeline.Dispose();
@@ -5852,10 +5838,7 @@ namespace System.Management.Automation
                 throw new PSNotSupportedException();
             }
 
-            if (RemotePowerShell.DataStructureHandler != null)
-            {
-                RemotePowerShell.DataStructureHandler.TransportManager.SuspendQueue(true);
-            }
+            RemotePowerShell.DataStructureHandler?.TransportManager.SuspendQueue(true);
         }
 
         /// <summary>
@@ -5868,10 +5851,7 @@ namespace System.Management.Automation
                 throw new PSNotSupportedException();
             }
 
-            if (RemotePowerShell.DataStructureHandler != null)
-            {
-                RemotePowerShell.DataStructureHandler.TransportManager.ResumeQueue();
-            }
+            RemotePowerShell.DataStructureHandler?.TransportManager.ResumeQueue();
         }
 
         /// <summary>
@@ -6165,15 +6145,9 @@ namespace System.Management.Automation
 
         internal PowerShellStopper(ExecutionContext context, PowerShell powerShell)
         {
-            if (context == null)
-            {
-                throw new ArgumentNullException(nameof(context));
-            }
+            ArgumentNullException.ThrowIfNull(context);
 
-            if (powerShell == null)
-            {
-                throw new ArgumentNullException(nameof(powerShell));
-            }
+            ArgumentNullException.ThrowIfNull(powerShell);
 
             _powerShell = powerShell;
 

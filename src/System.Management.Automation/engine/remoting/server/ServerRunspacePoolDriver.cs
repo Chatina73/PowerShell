@@ -168,7 +168,7 @@ namespace System.Management.Automation
             // The default server settings is to make new commands execute in the calling thread...this saves
             // thread switching time and thread pool pressure on the service.
             // Users can override the server settings only if they are administrators
-            PSThreadOptions serverThreadOptions = configData.ShellThreadOptions.HasValue ? configData.ShellThreadOptions.Value : PSThreadOptions.UseCurrentThread;
+            PSThreadOptions serverThreadOptions = configData.ShellThreadOptions ?? PSThreadOptions.UseCurrentThread;
             if (threadOptions == PSThreadOptions.Default || threadOptions == serverThreadOptions)
             {
                 RunspacePool.ThreadOptions = serverThreadOptions;
@@ -184,7 +184,7 @@ namespace System.Management.Automation
             }
 
             // Set Thread ApartmentState for this RunspacePool
-            ApartmentState serverApartmentState = configData.ShellThreadApartmentState.HasValue ? configData.ShellThreadApartmentState.Value : Runspace.DefaultApartmentState;
+            ApartmentState serverApartmentState = configData.ShellThreadApartmentState ?? Runspace.DefaultApartmentState;
 
             if (apartmentState == ApartmentState.Unknown || apartmentState == serverApartmentState)
             {
@@ -271,10 +271,7 @@ namespace System.Management.Automation
         internal void SendApplicationPrivateDataToClient()
         {
             // Include Debug mode information.
-            if (_applicationPrivateData == null)
-            {
-                _applicationPrivateData = new PSPrimitiveDictionary();
-            }
+            _applicationPrivateData ??= new PSPrimitiveDictionary();
 
             if (_serverRemoteDebugger != null)
             {
@@ -350,10 +347,7 @@ namespace System.Management.Automation
                 {
                     Runspace runspaceToDispose = _remoteHost.PushedRunspace;
                     _remoteHost.PopRunspace();
-                    if (runspaceToDispose != null)
-                    {
-                        runspaceToDispose.Dispose();
-                    }
+                    runspaceToDispose?.Dispose();
                 }
 
                 DisposeRemoteDebugger();
@@ -478,7 +472,7 @@ namespace System.Management.Automation
             // Remote debugger is created only when client version is PSVersion (4.0)
             // or greater, and remote session supports debugging.
             if ((_driverNestedInvoker != null) &&
-                (_clientPSVersion != null && _clientPSVersion >= PSVersionInfo.PSV4Version) &&
+                (_clientPSVersion != null && _clientPSVersion.Major >= 4) &&
                 (runspace != null && runspace.Debugger != null))
             {
                 _serverRemoteDebugger = new ServerRemoteDebugger(this, runspace, runspace.Debugger);
@@ -486,13 +480,7 @@ namespace System.Management.Automation
             }
         }
 
-        private void DisposeRemoteDebugger()
-        {
-            if (_serverRemoteDebugger != null)
-            {
-                _serverRemoteDebugger.Dispose();
-            }
-        }
+        private void DisposeRemoteDebugger() => _serverRemoteDebugger?.Dispose();
 
         /// <summary>
         /// Invokes a script.
@@ -561,7 +549,7 @@ namespace System.Management.Automation
                     Exception lastException = errorList[0] as Exception;
                     if (lastException != null)
                     {
-                        exceptionThrown = (lastException.Message != null) ? lastException.Message : string.Empty;
+                        exceptionThrown = lastException.Message ?? string.Empty;
                     }
                     else
                     {
@@ -728,7 +716,7 @@ namespace System.Management.Automation
             bool isNested = false;
 
             // The server would've dropped the protocol version of an older client was connecting
-            if (_serverCapability.ProtocolVersion >= RemotingConstants.ProtocolVersionWin8RTM)
+            if (_serverCapability.ProtocolVersion >= RemotingConstants.ProtocolVersion_2_2)
             {
                 isNested = RemotingDecoder.GetIsNested(data.Data);
             }
@@ -812,10 +800,7 @@ namespace System.Management.Automation
             {
                 // If we have a pushed runspace then execute there.
                 // Ensure debugger is enabled to the original mode it was set to.
-                if (_serverRemoteDebugger != null)
-                {
-                    _serverRemoteDebugger.CheckDebuggerState();
-                }
+                _serverRemoteDebugger?.CheckDebuggerState();
 
                 StartPowerShellCommandOnPushedRunspace(
                     powershell,
@@ -923,10 +908,7 @@ namespace System.Management.Automation
 
             // Invoke command normally.  Ensure debugger is enabled to the
             // original mode it was set to.
-            if (_serverRemoteDebugger != null)
-            {
-                _serverRemoteDebugger.CheckDebuggerState();
-            }
+            _serverRemoteDebugger?.CheckDebuggerState();
 
             // Invoke PowerShell on driver runspace pool.
             ServerPowerShellDriver driver = new ServerPowerShellDriver(
@@ -964,7 +946,7 @@ namespace System.Management.Automation
                         {
                             IEnumerable<SessionStateCommandEntry> publicGetCommandEntries = iss
                                 .Commands["Get-Command"]
-                                .Where(entry => entry.Visibility == SessionStateEntryVisibility.Public);
+                                .Where(static entry => entry.Visibility == SessionStateEntryVisibility.Public);
                             SessionStateFunctionEntry getCommandProxy = publicGetCommandEntries.OfType<SessionStateFunctionEntry>().FirstOrDefault();
                             if (getCommandProxy != null)
                             {
@@ -1252,7 +1234,7 @@ namespace System.Management.Automation
             BreakpointManagement,
         }
 
-        private class DebuggerCommandArgument
+        private sealed class DebuggerCommandArgument
         {
             public DebugModes? Mode { get; set; }
 
@@ -2004,10 +1986,7 @@ namespace System.Management.Automation
                     StringUtil.Format(DebuggerStrings.CannotProcessDebuggerCommandNotStopped));
             }
 
-            if (_processCommandCompleteEvent == null)
-            {
-                _processCommandCompleteEvent = new ManualResetEventSlim(false);
-            }
+            _processCommandCompleteEvent ??= new ManualResetEventSlim(false);
 
             _threadCommandProcessing = new ThreadCommandProcessing(command, output, _wrappedDebugger.Value, _processCommandCompleteEvent);
             try
@@ -2031,10 +2010,7 @@ namespace System.Management.Automation
             }
 
             ThreadCommandProcessing threadCommandProcessing = _threadCommandProcessing;
-            if (threadCommandProcessing != null)
-            {
-                threadCommandProcessing.Stop();
-            }
+            threadCommandProcessing?.Stop();
         }
 
         /// <summary>
@@ -2232,15 +2208,8 @@ namespace System.Management.Automation
                 ExitDebugMode(DebuggerResumeAction.Stop);
             }
 
-            if (_nestedDebugStopCompleteEvent != null)
-            {
-                _nestedDebugStopCompleteEvent.Dispose();
-            }
-
-            if (_processCommandCompleteEvent != null)
-            {
-                _processCommandCompleteEvent.Dispose();
-            }
+            _nestedDebugStopCompleteEvent?.Dispose();
+            _processCommandCompleteEvent?.Dispose();
         }
 
         #endregion
@@ -2312,10 +2281,7 @@ namespace System.Management.Automation
             public void Stop()
             {
                 Debugger debugger = _wrappedDebugger;
-                if (debugger != null)
-                {
-                    debugger.StopProcessCommand();
-                }
+                debugger?.StopProcessCommand();
             }
 
             internal void DoInvoke()
@@ -2420,7 +2386,10 @@ namespace System.Management.Automation
         private void HandleDebuggerStop(object sender, DebuggerStopEventArgs e)
         {
             // Ignore if we are in restricted mode.
-            if (!IsDebuggingSupported()) { return; }
+            if (!IsDebuggingSupported())
+            {
+                return;
+            }
 
             if (LocalDebugMode)
             {
@@ -2476,7 +2445,10 @@ namespace System.Management.Automation
         private void HandleBreakpointUpdated(object sender, BreakpointUpdatedEventArgs e)
         {
             // Ignore if we are in restricted mode.
-            if (!IsDebuggingSupported()) { return; }
+            if (!IsDebuggingSupported())
+            {
+                return;
+            }
 
             if (LocalDebugMode)
             {
@@ -2527,10 +2499,7 @@ namespace System.Management.Automation
                 {
                     // Blocking call for nested debugger execution (Debug-Runspace) stop events.
                     // The root debugger never makes two EnterDebugMode calls without an ExitDebugMode.
-                    if (_nestedDebugStopCompleteEvent == null)
-                    {
-                        _nestedDebugStopCompleteEvent = new ManualResetEventSlim(false);
-                    }
+                    _nestedDebugStopCompleteEvent ??= new ManualResetEventSlim(false);
 
                     _nestedDebugging = true;
                     OnEnterDebugMode(_nestedDebugStopCompleteEvent);
@@ -2799,7 +2768,10 @@ namespace System.Management.Automation
 
         internal void PopDebugger()
         {
-            if (!_wrappedDebugger.IsOverridden) { return; }
+            if (!_wrappedDebugger.IsOverridden)
+            {
+                return;
+            }
 
             // Swap wrapped debugger.
             UnsubscribeWrappedDebugger(_wrappedDebugger.Value);

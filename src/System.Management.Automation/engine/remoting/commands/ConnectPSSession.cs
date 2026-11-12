@@ -83,7 +83,7 @@ namespace Microsoft.PowerShell.Commands
         /// <summary>
         /// This parameters specifies the appname which identifies the connection
         /// end point on the remote machine. If this parameter is not specified
-        /// then the value specified in DEFAULTREMOTEAPPNAME will be used. If thats
+        /// then the value specified in DEFAULTREMOTEAPPNAME will be used. If that's
         /// not specified as well, then "WSMAN" will be used.
         /// </summary>
         [Parameter(ValueFromPipelineByPropertyName = true,
@@ -92,7 +92,10 @@ namespace Microsoft.PowerShell.Commands
                    ParameterSetName = ConnectPSSessionCommand.ComputerNameGuidParameterSet)]
         public string ApplicationName
         {
-            get { return _appName; }
+            get
+            {
+                return _appName;
+            }
 
             set
             {
@@ -117,7 +120,10 @@ namespace Microsoft.PowerShell.Commands
                    ParameterSetName = ConnectPSSessionCommand.ConnectionUriGuidParameterSet)]
         public string ConfigurationName
         {
-            get { return _shell; }
+            get
+            {
+                return _shell;
+            }
 
             set
             {
@@ -199,10 +205,13 @@ namespace Microsoft.PowerShell.Commands
         [Parameter(ParameterSetName = ConnectPSSessionCommand.ComputerNameGuidParameterSet)]
         [Parameter(ParameterSetName = ConnectPSSessionCommand.ConnectionUriParameterSet)]
         [Parameter(ParameterSetName = ConnectPSSessionCommand.ConnectionUriGuidParameterSet)]
-        [Credential()]
+        [Credential]
         public PSCredential Credential
         {
-            get { return _psCredential; }
+            get
+            {
+                return _psCredential;
+            }
 
             set
             {
@@ -223,7 +232,10 @@ namespace Microsoft.PowerShell.Commands
         [Parameter(ParameterSetName = ConnectPSSessionCommand.ConnectionUriGuidParameterSet)]
         public AuthenticationMechanism Authentication
         {
-            get { return _authentication; }
+            get
+            {
+                return _authentication;
+            }
 
             set
             {
@@ -245,7 +257,10 @@ namespace Microsoft.PowerShell.Commands
         [Parameter(ParameterSetName = ConnectPSSessionCommand.ConnectionUriGuidParameterSet)]
         public string CertificateThumbprint
         {
-            get { return _thumbprint; }
+            get
+            {
+                return _thumbprint;
+            }
 
             set
             {
@@ -472,7 +487,7 @@ namespace Microsoft.PowerShell.Commands
         /// <summary>
         /// Throttle class to perform a remoterunspace connect operation.
         /// </summary>
-        private class ConnectRunspaceOperation : IThrottleOperation
+        private sealed class ConnectRunspaceOperation : IThrottleOperation
         {
             private PSSession _session;
             private PSSession _oldSession;
@@ -554,10 +569,7 @@ namespace Microsoft.PowerShell.Commands
 
             internal override void StopOperation()
             {
-                if (_queryRunspaces != null)
-                {
-                    _queryRunspaces.StopAllOperations();
-                }
+                _queryRunspaces?.StopAllOperations();
 
                 _session.Runspace.StateChanged -= StateCallBackHandler;
                 SendStopComplete();

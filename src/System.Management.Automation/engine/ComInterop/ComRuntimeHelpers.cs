@@ -296,8 +296,15 @@ namespace System.Management.Automation.ComInterop
     {
         #region public members
 
-        public static unsafe IntPtr ConvertInt32ByrefToPtr(ref int value) { return (IntPtr)System.Runtime.CompilerServices.Unsafe.AsPointer(ref value); }
-        public static unsafe IntPtr ConvertVariantByrefToPtr(ref Variant value) { return (IntPtr)System.Runtime.CompilerServices.Unsafe.AsPointer(ref value); }
+        public static unsafe IntPtr ConvertInt32ByrefToPtr(ref int value)
+        {
+            return (IntPtr)System.Runtime.CompilerServices.Unsafe.AsPointer(ref value);
+        }
+
+        public static unsafe IntPtr ConvertVariantByrefToPtr(ref Variant value)
+        {
+            return (IntPtr)System.Runtime.CompilerServices.Unsafe.AsPointer(ref value);
+        }
 
         internal static Variant GetVariantForObject(object obj)
         {
@@ -315,7 +322,7 @@ namespace System.Management.Automation.ComInterop
             Debug.Assert(obj != null);
 
             // GetNativeVariantForObject is very expensive for values that marshal as VT_DISPATCH
-            // also is is extremely common scenario when object at hand is an RCW.
+            // also is extremely common scenario when object at hand is an RCW.
             // Therefore we are going to test for IDispatch before defaulting to GetNativeVariantForObject.
             if (obj is IDispatch)
             {
@@ -365,8 +372,7 @@ namespace System.Management.Automation.ComInterop
             fixed (ExcepInfo* pExcepInfo = &excepInfo)
             fixed (uint* pArgErr = &argErr)
             {
-                var pfnIDispatchInvoke = (delegate* unmanaged<IntPtr, int, Guid*, int, ushort, ComTypes.DISPPARAMS*, Variant*, ExcepInfo*, uint*, int>)
-                    (*(*(void***)dispatchPointer + 6 /* IDispatch.Invoke slot */));
+                var pfnIDispatchInvoke = (delegate* unmanaged<IntPtr, int, Guid*, int, ushort, ComTypes.DISPPARAMS*, Variant*, ExcepInfo*, uint*, int>)(*(*(void***)dispatchPointer + 6 /* IDispatch.Invoke slot */));
 
                 int hresult = pfnIDispatchInvoke(dispatchPointer,
                     memberDispId, &IID_NULL, 0, (ushort)flags, pDispParams, pResult, pExcepInfo, pArgErr);
@@ -375,7 +381,7 @@ namespace System.Management.Automation.ComInterop
                     && (flags & ComTypes.INVOKEKIND.INVOKE_FUNC) != 0
                     && (flags & (ComTypes.INVOKEKIND.INVOKE_PROPERTYPUT | ComTypes.INVOKEKIND.INVOKE_PROPERTYPUTREF)) == 0)
                 {
-                    // Re-invoke with no result argument to accomodate Word
+                    // Re-invoke with no result argument to accommodate Word
                     hresult = pfnIDispatchInvoke(dispatchPointer,
                         memberDispId, &IID_NULL, 0, (ushort)ComTypes.INVOKEKIND.INVOKE_FUNC, pDispParams, null, pExcepInfo, pArgErr);
                 }

@@ -265,7 +265,7 @@ namespace Microsoft.PowerShell.Commands
 
             IEnumerable<PSModuleInfo> remoteModuleInfos = remoteModules
                 .Select(cimModule => this.ConvertCimModuleInfoToPSModuleInfo(cimModule, cimSession.ComputerName))
-                .Where(moduleInfo => moduleInfo != null);
+                .Where(static moduleInfo => moduleInfo != null);
 
             return remoteModuleInfos;
         }
@@ -297,29 +297,17 @@ namespace Microsoft.PowerShell.Commands
         #region IDisposable Members
 
         /// <summary>
-        /// Releases resources associated with this object.
+        /// Release all resources.
         /// </summary>
         public void Dispose()
-        {
-            this.Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        /// <summary>
-        /// Releases resources associated with this object.
-        /// </summary>
-        private void Dispose(bool disposing)
         {
             if (_disposed)
             {
                 return;
             }
 
-            if (disposing)
-            {
-                _cancellationTokenSource.Dispose();
-            }
-
+            _cancellationTokenSource.Dispose();
+            
             _disposed = true;
         }
 
@@ -382,8 +370,8 @@ namespace Microsoft.PowerShell.Commands
                     FullyQualifiedName[modSpecIndex] = FullyQualifiedName[modSpecIndex].WithNormalizedName(Context, SessionState.Path.CurrentLocation.Path);
                 }
 
-                moduleSpecTable = FullyQualifiedName.ToDictionary(moduleSpecification => moduleSpecification.Name, StringComparer.OrdinalIgnoreCase);
-                strNames.AddRange(FullyQualifiedName.Select(spec => spec.Name));
+                moduleSpecTable = FullyQualifiedName.ToDictionary(static moduleSpecification => moduleSpecification.Name, StringComparer.OrdinalIgnoreCase);
+                strNames.AddRange(FullyQualifiedName.Select(static spec => spec.Name));
             }
 
             string[] names = strNames.Count > 0 ? strNames.ToArray() : null;
@@ -515,7 +503,7 @@ namespace Microsoft.PowerShell.Commands
             // Edition check only applies to Windows System32 module path
             if (!SkipEditionCheck && ListAvailable && !All)
             {
-                modules = modules.Where(module => module.IsConsideredEditionCompatible);
+                modules = modules.Where(static module => module.IsConsideredEditionCompatible);
             }
 #endif
 
@@ -586,24 +574,25 @@ namespace Microsoft.PowerShell.Commands
     }
 
     /// <summary>
-    /// PSEditionArgumentCompleter for PowerShell Edition names.
+    /// Provides argument completion for PSEdition parameter.
     /// </summary>
     public class PSEditionArgumentCompleter : IArgumentCompleter
     {
         /// <summary>
-        /// CompleteArgument.
+        /// Returns completion results for PSEdition parameter.
         /// </summary>
-        public IEnumerable<CompletionResult> CompleteArgument(string commandName, string parameterName, string wordToComplete, CommandAst commandAst, IDictionary fakeBoundParameters)
-        {
-            var wordToCompletePattern = WildcardPattern.Get(string.IsNullOrWhiteSpace(wordToComplete) ? "*" : wordToComplete + "*", WildcardOptions.IgnoreCase);
-
-            foreach (var edition in Utils.AllowedEditionValues)
-            {
-                if (wordToCompletePattern.IsMatch(edition))
-                {
-                    yield return new CompletionResult(edition, edition, CompletionResultType.Text, edition);
-                }
-            }
-        }
+        /// <param name="commandName">The command name.</param>
+        /// <param name="parameterName">The parameter name.</param>
+        /// <param name="wordToComplete">The word to complete.</param>
+        /// <param name="commandAst">The command AST.</param>
+        /// <param name="fakeBoundParameters">The fake bound parameters.</param>
+        /// <returns>List of completion results.</returns>
+        public IEnumerable<CompletionResult> CompleteArgument(
+            string commandName,
+            string parameterName,
+            string wordToComplete,
+            CommandAst commandAst,
+            IDictionary fakeBoundParameters)
+                => CompletionHelpers.GetMatchingResults(wordToComplete, possibleCompletionValues: Utils.AllowedEditionValues);
     }
 }

@@ -43,7 +43,7 @@ namespace PSTests.Parallel
         {
             Dispose(true);
             GC.SuppressFinalize(this);
-        }        
+        }
 
         protected virtual void Dispose(bool disposing)
         {
@@ -84,7 +84,7 @@ namespace PSTests.Parallel
             }
             else
             {
-                Assert.Throws<System.ArgumentNullException>(delegate { InternalSymbolicLinkLinkCodeMethods.CreateJunction(string.Empty, string.Empty); });
+                Assert.Throws<System.ArgumentException>(delegate { InternalSymbolicLinkLinkCodeMethods.CreateJunction(string.Empty, string.Empty); });
             }
         }
 
@@ -115,7 +115,7 @@ namespace PSTests.Parallel
             {
                 directoryObject = new DirectoryInfo(System.Environment.CurrentDirectory);
                 fileObject = new FileInfo(System.Reflection.Assembly.GetEntryAssembly().Location);
-                executableObject = new FileInfo(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName);
+                executableObject = new FileInfo(Environment.ProcessPath);
             }
 
             Assert.Equal("d----", FileSystemProvider.Mode(PSObject.AsPSObject(directoryObject)).Replace("r", "-"));

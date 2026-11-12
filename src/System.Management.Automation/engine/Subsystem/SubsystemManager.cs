@@ -6,8 +6,10 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Linq;
 using System.Management.Automation.Internal;
+using System.Management.Automation.Subsystem.DSC;
+using System.Management.Automation.Subsystem.Feedback;
+using System.Management.Automation.Subsystem.Prediction;
 
 namespace System.Management.Automation.Subsystem
 {
@@ -28,6 +30,16 @@ namespace System.Management.Automation.Subsystem
                     SubsystemKind.CommandPredictor,
                     allowUnregistration: true,
                     allowMultipleRegistration: true),
+
+                SubsystemInfo.Create<ICrossPlatformDsc>(
+                    SubsystemKind.CrossPlatformDsc,
+                    allowUnregistration: true,
+                    allowMultipleRegistration: false),
+
+                SubsystemInfo.Create<IFeedbackProvider>(
+                    SubsystemKind.FeedbackProvider,
+                    allowUnregistration: true,
+                    allowMultipleRegistration: true),
             };
 
             var subSystemTypeMap = new Dictionary<Type, SubsystemInfo>(subsystems.Length);
@@ -42,6 +54,9 @@ namespace System.Management.Automation.Subsystem
             s_subsystems = new ReadOnlyCollection<SubsystemInfo>(subsystems);
             s_subSystemTypeMap = new ReadOnlyDictionary<Type, SubsystemInfo>(subSystemTypeMap);
             s_subSystemKindMap = new ReadOnlyDictionary<SubsystemKind, SubsystemInfo>(subSystemKindMap);
+
+            // Register built-in suggestion providers.
+            RegisterSubsystem(SubsystemKind.FeedbackProvider, new GeneralCommandErrorFeedback());
         }
 
         #region internal - Retrieve subsystem proxy object
@@ -52,14 +67,14 @@ namespace System.Management.Automation.Subsystem
         /// </summary>
         /// <remarks>
         /// Design point:
-        /// The implemnentation proxy object is not supposed to expose to users.
+        /// The implementation proxy object is not supposed to expose to users.
         /// Users shouldn't depend on a implementation proxy object directly, but instead should depend on PowerShell APIs.
         /// <para/>
         /// Example: if a user want to use prediction functionality, he/she should use the PowerShell prediction API instead of
         /// directly interacting with the implementation proxy object of `IPrediction`.
         /// </remarks>
         /// <typeparam name="TConcreteSubsystem">The concrete subsystem base type.</typeparam>
-        /// <returns>The most recently registered implmentation object of the concrete subsystem.</returns>
+        /// <returns>The most recently registered implementation object of the concrete subsystem.</returns>
         internal static TConcreteSubsystem? GetSubsystem<TConcreteSubsystem>()
             where TConcreteSubsystem : class, ISubsystem
         {
@@ -80,7 +95,7 @@ namespace System.Management.Automation.Subsystem
         /// Return an empty collection when the given subsystem is not registered.
         /// </summary>
         /// <typeparam name="TConcreteSubsystem">The concrete subsystem base type.</typeparam>
-        /// <returns>A readonly collection of all implmentation objects registered for the concrete subsystem.</returns>
+        /// <returns>A readonly collection of all implementation objects registered for the concrete subsystem.</returns>
         internal static ReadOnlyCollection<TConcreteSubsystem> GetSubsystems<TConcreteSubsystem>()
             where TConcreteSubsystem : class, ISubsystem
         {
@@ -116,7 +131,7 @@ namespace System.Management.Automation.Subsystem
         /// <returns>The <see cref="SubsystemInfo"/> object that represents the concrete subsystem.</returns>
         public static SubsystemInfo GetSubsystemInfo(Type subsystemType)
         {
-            Requires.NotNull(subsystemType, nameof(subsystemType));
+            ArgumentNullException.ThrowIfNull(subsystemType);
 
             if (s_subSystemTypeMap.TryGetValue(subsystemType, out SubsystemInfo? subsystemInfo))
             {
@@ -124,9 +139,12 @@ namespace System.Management.Automation.Subsystem
             }
 
             throw new ArgumentException(
-                StringUtil.Format(
-                    SubsystemStrings.SubsystemTypeUnknown,
-                    subsystemType.FullName));
+                subsystemType == typeof(ISubsystem)
+                    ? SubsystemStrings.MustUseConcreteSubsystemType
+                    : StringUtil.Format(
+                        SubsystemStrings.SubsystemTypeUnknown,
+                        subsystemType.FullName),
+                nameof(subsystemType));
         }
 
         /// <summary>
@@ -144,7 +162,8 @@ namespace System.Management.Automation.Subsystem
             throw new ArgumentException(
                 StringUtil.Format(
                     SubsystemStrings.SubsystemKindUnknown,
-                    kind.ToString()));
+                    kind.ToString()),
+                nameof(kind));
         }
 
         #endregion
@@ -161,7 +180,7 @@ namespace System.Management.Automation.Subsystem
             where TConcreteSubsystem : class, ISubsystem
             where TImplementation : class, TConcreteSubsystem
         {
-            Requires.NotNull(proxy, nameof(proxy));
+            ArgumentNullException.ThrowIfNull(proxy);
 
             RegisterSubsystem(GetSubsystemInfo(typeof(TConcreteSubsystem)), proxy);
         }
@@ -173,19 +192,20 @@ namespace System.Management.Automation.Subsystem
         /// <param name="proxy">An instance of the implementation.</param>
         public static void RegisterSubsystem(SubsystemKind kind, ISubsystem proxy)
         {
-            Requires.NotNull(proxy, nameof(proxy));
+            ArgumentNullException.ThrowIfNull(proxy);
 
-            if (kind != proxy.Kind)
+            SubsystemInfo info = GetSubsystemInfo(kind);
+            if (!info.SubsystemType.IsAssignableFrom(proxy.GetType()))
             {
                 throw new ArgumentException(
                     StringUtil.Format(
-                        SubsystemStrings.ImplementationMismatch,
-                        proxy.Kind.ToString(),
-                        kind.ToString()),
+                        SubsystemStrings.ConcreteSubsystemNotImplemented,
+                        kind.ToString(),
+                        info.SubsystemType.Name),
                     nameof(proxy));
             }
 
-            RegisterSubsystem(GetSubsystemInfo(kind), proxy);
+            RegisterSubsystem(info, proxy);
         }
 
         private static void RegisterSubsystem(SubsystemInfo subsystemInfo, ISubsystem proxy)
@@ -273,7 +293,14 @@ namespace System.Management.Automation.Subsystem
             ISubsystem impl = subsystemInfo.UnregisterImplementation(id);
             if (impl is IDisposable disposable)
             {
-                disposable.Dispose();
+                try
+                {
+                    disposable.Dispose();
+                }
+                catch
+                {
+                    // It's OK to ignore all exceptions when disposing the object.
+                }
             }
         }
 

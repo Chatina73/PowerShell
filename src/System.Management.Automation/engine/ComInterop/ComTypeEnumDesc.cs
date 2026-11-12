@@ -15,13 +15,9 @@ namespace System.Management.Automation.ComInterop
         private readonly string[] _memberNames;
         private readonly object[] _memberValues;
 
-        public override string ToString()
-        {
-            return string.Format(CultureInfo.CurrentCulture, "<enum '{0}'>", TypeName);
-        }
+        public override string ToString() => $"<enum '{TypeName}'>";
 
-        internal ComTypeEnumDesc(ComTypes.ITypeInfo typeInfo, ComTypeLibDesc typeLibDesc) :
-            base(typeInfo, typeLibDesc)
+        internal ComTypeEnumDesc(ComTypes.ITypeInfo typeInfo, ComTypeLibDesc typeLibDesc) : base(typeInfo, typeLibDesc)
         {
             ComTypes.TYPEATTR typeAttr = ComRuntimeHelpers.GetTypeAttrForTypeInfo(typeInfo);
             string[] memberNames = new string[typeAttr.cVars];
